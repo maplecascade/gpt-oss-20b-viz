@@ -1,0 +1,1224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPT-OSS 20B MoE — Interactive Architecture Visualization</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --bg: #0d1117; --bg2: #090c10; --bg3: #060809;
+  --accent: #58a6ff; --cyan: #56d364; --purple: #bc8cff;
+  --gold: #e3b341; --green: #3fb950; --orange: #f0883e; --pink: #f778ba;
+  --text: #e6edf3; --text2: #8b949e;
+  --panel-w: 480px; --header-h: 50px;
+  --blk-weight: #4d4dff; --blk-inter: #4dcc4d; --blk-agg: #b34d4d; --blk-route: #ff6b35;
+}
+html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg3); color: var(--text); overflow: hidden; }
+header { height: var(--header-h); display: flex; align-items: center; padding: 0 20px; background: linear-gradient(90deg, #0d1117 0%, #161b22 100%); border-bottom: 1px solid rgba(255,255,255,0.06); z-index: 100; position: relative; }
+header h1 { font-size: 15px; font-weight: 600; }
+header h1 b { color: var(--accent); }
+.tag { margin-left: 14px; font-size: 10px; padding: 2px 10px; border-radius: 10px; background: rgba(88,166,255,0.12); border: 1px solid rgba(88,166,255,0.25); color: var(--accent); }
+.tag2 { margin-left: 6px; font-size: 10px; padding: 2px 10px; border-radius: 10px; background: rgba(240,136,62,0.12); border: 1px solid rgba(240,136,62,0.25); color: var(--orange); }
+header .right { margin-left: auto; font-size: 11px; color: var(--text2); }
+#app { display: flex; height: calc(100vh - var(--header-h)); }
+#panel { width: var(--panel-w); min-width: var(--panel-w); background: var(--bg2); display: flex; flex-direction: column; border-right: 1px solid rgba(255,255,255,0.06); }
+#toc { padding: 14px 16px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); flex-shrink: 0; max-height: 240px; overflow-y: auto; }
+#toc h3 { font-size: 10px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--text2); margin-bottom: 8px; }
+.toc-item { display: flex; align-items: center; gap: 8px; padding: 5px 10px; margin: 1px 0; border-radius: 5px; cursor: pointer; font-size: 12px; color: var(--text2); transition: 0.15s; }
+.toc-item:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+.toc-item.active { background: rgba(88,166,255,0.1); color: var(--accent); font-weight: 600; }
+.toc-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+#detail { flex: 1; overflow-y: auto; padding: 0; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.1) transparent; }
+#detail::-webkit-scrollbar { width: 5px; }
+#detail::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
+.step { padding: 20px 22px 24px; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.step-header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.step-num { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; }
+.step-title { font-size: 15px; font-weight: 700; }
+.step p { font-size: 12.5px; line-height: 1.75; color: var(--text2); margin-bottom: 8px; }
+.step .hl { font-weight: 600; color: var(--text); }
+.step .hl-b { color: var(--accent); font-weight: 600; }
+.step .hl-g { color: var(--gold); font-weight: 600; }
+.step .hl-v { color: var(--green); font-weight: 600; }
+.step .hl-p { color: var(--purple); font-weight: 600; }
+.step .hl-o { color: var(--orange); font-weight: 600; }
+.step .hl-c { color: var(--cyan); font-weight: 600; }
+.flow-diagram { background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 14px; margin: 12px 0; overflow-x: auto; }
+.flow-diagram svg { display: block; margin: 0 auto; }
+.spec-table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 11.5px; }
+.spec-table th { text-align: left; padding: 6px 10px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text2); border-bottom: 1px solid rgba(255,255,255,0.08); }
+.spec-table td { padding: 5px 10px; border-bottom: 1px solid rgba(255,255,255,0.03); color: var(--text2); }
+.spec-table td:last-child { color: var(--gold); font-family: 'Cascadia Code', 'Fira Code', monospace; font-weight: 600; }
+.formula-block { background: rgba(188,140,255,0.06); border: 1px solid rgba(188,140,255,0.18); border-radius: 6px; padding: 10px 14px; margin: 10px 0; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 11.5px; color: #c9b0ff; line-height: 1.9; }
+.code-block { background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px; padding: 10px 14px; margin: 10px 0; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 11px; color: var(--green); line-height: 1.7; }
+.quant-badge { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-family: monospace; font-weight: 700; margin: 2px; }
+.quant-mxfp4 { background: rgba(240,136,62,0.15); border: 1px solid rgba(240,136,62,0.35); color: var(--orange); }
+.quant-q8 { background: rgba(88,166,255,0.12); border: 1px solid rgba(88,166,255,0.25); color: var(--accent); }
+.step-nav { display: flex; gap: 8px; margin-top: 14px; }
+.step-nav button { flex: 1; padding: 7px; border-radius: 5px; font-size: 11px; cursor: pointer; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); color: var(--text2); transition: 0.2s; font-family: inherit; }
+.step-nav button:hover { background: rgba(88,166,255,0.12); border-color: var(--accent); color: var(--accent); }
+#three-wrap { flex: 1; position: relative; background: #060a0f; }
+#three-wrap canvas { display: block; }
+#hud { position: absolute; top: 12px; left: 12px; z-index: 10; font-size: 10px; color: var(--text2); line-height: 1.7; background: rgba(6,10,15,0.8); padding: 8px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.07); backdrop-filter: blur(6px); pointer-events: none; }
+#hud b { color: var(--text); }
+#legend3d { position: absolute; bottom: 14px; left: 14px; z-index: 10; background: rgba(6,10,15,0.85); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 14px; backdrop-filter: blur(6px); font-size: 10px; }
+#legend3d h4 { font-size: 9px; text-transform: uppercase; letter-spacing: 1px; color: var(--text2); margin-bottom: 6px; }
+.leg-row { display: flex; align-items: center; gap: 7px; margin: 3px 0; color: var(--text2); }
+.leg-swatch { width: 12px; height: 8px; border-radius: 2px; flex-shrink: 0; }
+#sig-banner { position: absolute; top: 12px; right: 12px; z-index: 10; background: rgba(6,10,15,0.88); border: 1px solid rgba(88,166,255,0.18); border-radius: 8px; padding: 10px 14px; backdrop-filter: blur(6px); font-size: 10px; max-width: 260px; line-height: 1.5; }
+#sig-banner .sig-name { color: var(--accent); font-weight: 700; font-size: 11px; }
+#sig-banner .sig-note { color: var(--text2); margin-top: 4px; font-size: 9px; line-height: 1.5; }
+#sig-banner .sig-warn { color: #bc8855; font-size: 9px; margin-top: 5px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 5px; line-height: 1.5; }
+#tooltip3d { position: fixed; z-index: 200; pointer-events: none; background: rgba(9,12,16,0.95); border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; padding: 8px 12px; max-width: 280px; font-size: 11px; line-height: 1.5; color: var(--text); box-shadow: 0 6px 24px rgba(0,0,0,0.5); backdrop-filter: blur(8px); opacity: 0; transition: opacity 0.12s; }
+#tooltip3d.show { opacity: 1; }
+#tooltip3d .tt-title { font-weight: 700; color: var(--cyan); margin-bottom: 3px; }
+#tooltip3d .tt-dim { color: var(--gold); font-family: monospace; font-size: 10px; }
+.blk-label { color: rgba(255,255,255,0.7); font-size: 9px; font-family: 'Segoe UI', sans-serif; white-space: nowrap; pointer-events: none; text-shadow: 0 1px 4px rgba(0,0,0,0.9); letter-spacing: 0.3px; }
+.blk-label.dim { color: rgba(255,255,255,0.35); font-size: 8px; }
+.cell-info { position: absolute; bottom: 14px; right: 14px; z-index: 10; background: rgba(6,10,15,0.9); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 8px 12px; backdrop-filter: blur(6px); font-size: 10px; font-family: 'Cascadia Code', monospace; color: var(--gold); opacity: 0; transition: opacity 0.15s; pointer-events: none; }
+.cell-info.show { opacity: 1; }
+.ci-label { color: var(--text2); font-family: 'Segoe UI', sans-serif; margin-bottom: 2px; font-size: 9px; text-transform: uppercase; letter-spacing: 0.8px; }
+.ci-val { font-size: 13px; color: var(--cyan); }
+.ci-conn { color: var(--text2); font-size: 9px; margin-top: 3px; }
+@media (max-width: 900px) { :root { --panel-w: 340px; } }
+@media (max-width: 650px) { #panel { display: none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>GPT-OSS <b>20B MoE</b> Visualization</h1>
+  <span class="tag">20B · MXFP4 · 131K ctx</span>
+  <span class="tag2">32 experts · top-4</span>
+  <span class="right">Orbit: drag | Zoom: scroll | Pan: right-drag | ← → steps</span>
+</header>
+<div id="app">
+  <div id="panel">
+    <div id="toc"><h3>Table of Contents</h3></div>
+    <div id="detail"></div>
+  </div>
+  <div id="three-wrap">
+    <div id="hud">
+      <b>OpenAI GPT-OSS-20B</b><br>
+      Params: ~20B stored · ~3B activated/token<br>
+      Layers: 24 · Hidden: 2,880 · Heads: 64Q/8KV<br>
+      Experts: 32 total, top-4 active · Window: 128
+    </div>
+    <div id="sig-banner">
+      <div class="sig-name">March 27 2026 — Maple Cascade</div>
+      <div class="sig-note">GPT-OSS 20B MoE architecture visualization. Based on <a href="https://bbycroft.net/llm" style="color:var(--accent)">bbycroft.net/llm</a> style. GGUF metadata from <code style="font-size:9px;color:var(--gold)">gpt-oss-20b-MXFP4.gguf</code>.</div>
+      <div class="sig-warn">⚠ Block dimensions scaled ÷64 for display. Expert fan shows all 32 slabs; top-4 conceptually active. Sliding window + sink topology simplified. Biases omitted.</div>
+    </div>
+    <div id="legend3d">
+      <h4>bbycroft-style Legend</h4>
+      <div class="leg-row"><div class="leg-swatch" style="background:#4d4dff"></div>Weight Matrices (W) — MXFP4</div>
+      <div class="leg-row"><div class="leg-swatch" style="background:#8080ff"></div>Embedding/Output (W) — Q8_0</div>
+      <div class="leg-row"><div class="leg-swatch" style="background:#4dcc4d"></div>Intermediate Values (I)</div>
+      <div class="leg-row"><div class="leg-swatch" style="background:#b34d4d"></div>Aggregates / Norms (A)</div>
+      <div class="leg-row"><div class="leg-swatch" style="background:#ff6b35"></div>MoE Router Gate</div>
+      <div class="leg-row"><div class="leg-swatch" style="background:#56d364;opacity:0.4"></div>Inactive Experts (dim)</div>
+    </div>
+    <div id="tooltip3d"><div class="tt-title"></div><div class="tt-body"></div></div>
+    <div class="cell-info" id="cellInfo">
+      <div class="ci-label">Cell Coordinate</div>
+      <div class="ci-val" id="ciVal">—</div>
+      <div class="ci-conn" id="ciConn"></div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
+<script>
+// ═══════════════════════════════════════════════════════════════
+// WALKTHROUGH STEPS
+// ═══════════════════════════════════════════════════════════════
+const STEPS = [
+{id:'overview', label:'Overview', color:'#58a6ff',
+ title:'GPT-OSS 20B — Sparse Mixture-of-Experts Transformer',
+ body:`<p>GPT-OSS 20B is an <span class="hl-b">open-weight sparse MoE transformer</span> from OpenAI.
+ It stores ~20B parameters but only activates <span class="hl-g">~3B per token</span> by routing each
+ token through 4 of 32 specialist expert networks.</p>
+ <div class="flow-diagram"><svg width="400" height="260" viewBox="0 0 400 260">
+ <defs><marker id="ah" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#666"/></marker></defs>
+ <rect x="140" y="6" width="120" height="28" rx="5" fill="rgba(88,166,255,0.12)" stroke="#58a6ff" stroke-width="1.5"/>
+ <text x="200" y="25" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="600">Input Tokens</text>
+ <line x1="200" y1="34" x2="200" y2="50" stroke="#555" marker-end="url(#ah)"/>
+ <rect x="120" y="50" width="160" height="28" rx="5" fill="rgba(227,179,65,0.1)" stroke="#e3b341" stroke-width="1.5"/>
+ <text x="200" y="69" text-anchor="middle" fill="#e3b341" font-size="11" font-weight="600">Embed (201,088 × 2,880)</text>
+ <line x1="200" y1="78" x2="200" y2="96" stroke="#555" marker-end="url(#ah)"/>
+ <rect x="80" y="96" width="240" height="60" rx="5" fill="rgba(188,140,255,0.08)" stroke="#bc8cff" stroke-width="1.5"/>
+ <text x="200" y="116" text-anchor="middle" fill="#bc8cff" font-size="11" font-weight="700">× 24 Transformer Layers</text>
+ <text x="200" y="134" text-anchor="middle" fill="#8b949e" font-size="9.5">GQA(64Q/8KV) + SlidingWin(128) + MoE(top-4/32)</text>
+ <line x1="200" y1="156" x2="200" y2="174" stroke="#555" marker-end="url(#ah)"/>
+ <rect x="120" y="174" width="160" height="28" rx="5" fill="rgba(178,77,77,0.1)" stroke="#b34d4d" stroke-width="1.5"/>
+ <text x="200" y="193" text-anchor="middle" fill="#b34d4d" font-size="11" font-weight="600">RMSNorm (final)</text>
+ <line x1="200" y1="202" x2="200" y2="220" stroke="#555" marker-end="url(#ah)"/>
+ <rect x="90" y="220" width="220" height="28" rx="5" fill="rgba(86,211,100,0.1)" stroke="#56d364" stroke-width="1.5"/>
+ <text x="200" y="239" text-anchor="middle" fill="#56d364" font-size="11" font-weight="600">Logits (201,088 vocab)</text>
+ </svg></div>
+ <table class="spec-table"><tr><th>Parameter</th><th>Value</th></tr>
+ <tr><td>Architecture</td><td>gpt-oss (MoE Transformer)</td></tr>
+ <tr><td>Total Parameters</td><td>~20B (stored)</td></tr>
+ <tr><td>Activated / Token</td><td>~3B (top-4 experts)</td></tr>
+ <tr><td>Transformer Layers</td><td>24</td></tr>
+ <tr><td>Hidden Dimension</td><td>2,880</td></tr>
+ <tr><td>Attention Heads Q/KV</td><td>64 / 8 (8:1 GQA)</td></tr>
+ <tr><td>Head Dimension</td><td>128 (64 RoPE dims)</td></tr>
+ <tr><td>Sliding Window</td><td>128 tokens + sinks</td></tr>
+ <tr><td>Experts / Active</td><td>32 total, top-4 per token</td></tr>
+ <tr><td>Expert FFN dim</td><td>2,880 (1:1 with hidden)</td></tr>
+ <tr><td>Context Length</td><td>131,072 (YaRN 32× scaled)</td></tr>
+ <tr><td>Vocabulary</td><td>201,088 (GPT-4o BPE)</td></tr>
+ <tr><td>Quantization</td><td>MXFP4 (attn+MoE), Q8_0 (embed)</td></tr>
+ <tr><td>File Size</td><td>~11.5 GB (MXFP4)</td></tr>
+ <tr><td>Speed (RTX 4090)</td><td>~234 tok/s (tg128)</td></tr>
+ </table>`},
+
+{id:'tokenize', label:'Tokenization', color:'#58a6ff',
+ title:'Step 1 — GPT-4o BPE Tokenizer',
+ body:`<p>Text is tokenized with <span class="hl-b">GPT-4o BPE</span>: a byte-level
+ byte-pair encoding with vocabulary size <span class="hl-g">201,088</span>. This is
+ the same tokenizer used by GPT-4o, enabling cross-model embedding compatibility.</p>
+ <table class="spec-table"><tr><th>Property</th><th>Value</th></tr>
+ <tr><td>Tokenizer Type</td><td>BPE (tiktoken-style)</td></tr>
+ <tr><td>Pre-tokenizer</td><td>gpt-4o</td></tr>
+ <tr><td>Vocabulary Size</td><td>201,088 tokens</td></tr>
+ <tr><td>BOS Token</td><td>ID 200,016</td></tr>
+ <tr><td>EOS Token</td><td>ID 200,017</td></tr>
+ <tr><td>Byte Fallback</td><td>Yes (256 byte tokens)</td></tr>
+ </table>
+ <p>In the 3D view: the <span class="hl-g">small green strip</span> at the top represents
+ the integer token ID sequence (T tokens long for the displayed batch).</p>`},
+
+{id:'embed', label:'Embedding', color:'#e3b341',
+ title:'Step 2 — Token Embedding (2,880-d)',
+ body:`<p>Each token ID indexes into a <span class="hl-b">large embedding matrix</span>
+ to retrieve a 2,880-dimensional dense vector. Both the input embedding and the output
+ LM head share the same (201,088 × 2,880) shape.</p>
+ <div class="formula-block">E = Embed(token_id) ∈ ℝ<sup>2880</sup>
+h₀ = E  ∈ ℝ<sup>T × 2880</sup>  (residual stream)</div>
+ <p>Note: unlike the attention/MoE weights (<span class="quant-mxfp4">MXFP4</span>),
+ the embedding and output projection use <span class="quant-q8">Q8_0</span> quantization
+ — higher precision since these layers are pure memory-lookup dominated, not compute-bound.</p>
+ <table class="spec-table"><tr><th>Tensor</th><th>Shape</th><th>Quant</th></tr>
+ <tr><td>token_embd.weight</td><td>201,088 × 2,880</td><td>Q8_0 (~1.16B params)</td></tr>
+ <tr><td>output.weight</td><td>201,088 × 2,880</td><td>Q8_0 (~1.16B params)</td></tr>
+ </table>
+ <p>In the 3D view: the large <span style="color:#8080ff;font-weight:600">light-blue block</span>
+ to the left is the embedding weight matrix. The taller green block on the residual path
+ is the resulting embedding tensor (T, 2880).</p>`},
+
+{id:'attention', label:'Sliding Window GQA', color:'#4d4dff',
+ title:'Step 3 — GQA Sliding Window Attention (window=128)',
+ body:`<p>Each layer uses <span class="hl-b">Grouped-Query Attention</span> with an extreme
+ <span class="hl-g">8:1 ratio</span> (64 Q heads share 8 KV heads). Combined with a
+ <span class="hl-o">sliding window</span> of 128 tokens, this dramatically reduces compute
+ and KV-cache size.</p>
+ <div class="formula-block">Q = x · W_Q  ∈ ℝ<sup>T × 64 × 128</sup>  (64 heads, dim 128)
+K = x · W_K  ∈ ℝ<sup>T × 8 × 128</sup>   (8 KV heads, shared)
+V = x · W_V  ∈ ℝ<sup>T × 8 × 128</sup>
+
+Attn(q,k,v) = softmax(q·kᵀ/√128) · v  [window 128]
+y = Concat(heads) · W_O  ∈ ℝ<sup>T × 2880</sup></div>
+ <p>The <span class="hl-o">attention sinks</span> (<code>attn_sinks.weight</code>, 1 sink
+ per KV head × 128-d) are fixed anchor tokens that every position can attend to regardless
+ of window position — preventing the "lost tokens" problem in long contexts.</p>
+ <table class="spec-table"><tr><th>Tensor</th><th>Shape</th><th>Params</th></tr>
+ <tr><td>W_Q</td><td>2,880 × 8,192</td><td>~23.6M · MXFP4</td></tr>
+ <tr><td>W_K</td><td>2,880 × 1,024</td><td>~2.95M · MXFP4</td></tr>
+ <tr><td>W_V</td><td>2,880 × 1,024</td><td>~2.95M · MXFP4</td></tr>
+ <tr><td>W_O</td><td>8,192 × 2,880</td><td>~23.6M · MXFP4</td></tr>
+ <tr><td>attn_sinks</td><td>8 × 128</td><td>1,024 params</td></tr>
+ <tr><td>RoPE dims / head</td><td>64 of 128</td><td>θ=150,000</td></tr>
+ <tr><td>GQA ratio</td><td>64Q / 8KV</td><td>8:1 group share</td></tr>
+ </table>
+ <p>In the 3D view: W_Q is the <span style="color:#4d4dff;font-weight:600">wide blue block</span>
+ (2880×8192), W_K/V are narrow blocks (2880×1024), and the QKV activation strip is green.</p>`},
+
+{id:'router', label:'MoE Router', color:'#ff6b35',
+ title:'Step 4 — Mixture-of-Experts Router (top-4 / 32)',
+ body:`<p>After attention + residual, each token is routed to <span class="hl-o">4 of 32 expert FFNs</span>
+ by a learned router gate. The router projects the 2,880-d hidden state to 32 scores,
+ takes the top-4, and normalizes their dispatch weights.</p>
+ <div class="formula-block">scores = x · W_router  ∈ ℝ<sup>32</sup>        (router gate)
+(idx, w) = top_k(softmax(scores), k=4)   (select 4 experts)
+weights  = softmax(scores[idx])           (re-normalize)</div>
+ <p>The router itself is tiny — <span class="hl-g">W_router ∈ ℝ(2880×32)</span>, only 92,160
+ parameters. But it controls which 25% of expert capacity activates for every token in every layer.</p>
+ <table class="spec-table"><tr><th>Property</th><th>Value</th></tr>
+ <tr><td>Router (ffn_gate_inp)</td><td>2,880 × 32 = 92,160 params</td></tr>
+ <tr><td>Total Experts</td><td>32 specialists per layer</td></tr>
+ <tr><td>Active per Token</td><td>4 (top-4 by softmax score)</td></tr>
+ <tr><td>Selection Metric</td><td>Top-K by router softmax score</td></tr>
+ <tr><td>Dispatch Weights</td><td>Re-softmax over selected 4</td></tr>
+ <tr><td>Why top-4, not all 32?</td><td>8× compute savings; specialization; training contract</td></tr>
+ </table>
+ <p>In the 3D view: the <span style="color:#ff6b35;font-weight:600">orange router block</span>
+ sits between the residual stream and the expert fan. 32 expert slabs spread in Z (depth);
+ 4 are shown brighter (conceptually active). Arcs show routing paths.</p>`},
+
+{id:'experts', label:'Expert FFN (SwiGLU)', color:'#4dcc4d',
+ title:'Step 5 — SwiGLU Expert Networks',
+ body:`<p>Each of the 32 experts is a <span class="hl-g">SwiGLU FFN</span> with input/output
+ dimension 2,880 and <span class="hl-o">intermediate dimension also 2,880</span> (1:1 ratio —
+ unusually compact; typical models use 2.7× expansion). Only 4 are computed per token.</p>
+ <div class="formula-block">Expert_e(x):
+  gate_e = SiLU(x · W_gate_e)  ∈ ℝ<sup>2880</sup>
+  up_e   = x · W_up_e          ∈ ℝ<sup>2880</sup>
+  h_e    = gate_e ⊙ up_e       ∈ ℝ<sup>2880</sup>  (element-wise)
+  out_e  = h_e · W_down_e      ∈ ℝ<sup>2880</sup>
+
+MoE_output = Σ_{e∈top4} weight_e · Expert_e(x)</div>
+ <table class="spec-table"><tr><th>Tensor (per expert)</th><th>Shape</th><th>Total (×32)</th></tr>
+ <tr><td>W_gate_e</td><td>2,880 × 2,880</td><td>32 × 8.3M = 265M</td></tr>
+ <tr><td>W_up_e</td><td>2,880 × 2,880</td><td>32 × 8.3M = 265M</td></tr>
+ <tr><td>W_down_e</td><td>2,880 × 2,880</td><td>32 × 8.3M = 265M</td></tr>
+ <tr><td colspan="2"><b>Total MoE params / layer</b></td><td><b>~796M</b></td></tr>
+ <tr><td colspan="2">Active params / token / layer</td><td>4 × 3 × 8.3M = ~99M</td></tr>
+ <tr><td colspan="2">24 layers × 796M stored</td><td><b>~19.1B</b> of 20B total</td></tr>
+ </table>
+ <p>The 3D view shows 32 expert slabs fanned out in Z-depth. The <span style="color:#4dcc4d;font-weight:600">bright green slabs</span> are conceptually active; <span style="color:#4d4dff;font-weight:600;opacity:0.5">dim blue</span> are inactive this token.</p>`},
+
+{id:'layers', label:'24 Transformer Layers', color:'#bc8cff',
+ title:'Step 6 — Full Transformer Stack (24 Layers)',
+ body:`<p>24 stacked layers with <span class="hl-p">pre-norm residual</span> connections.
+ Each layer: RMSNorm → GQA(sliding) → +residual → RMSNorm → MoE(top-4) → +residual.</p>
+ <div class="formula-block">layer(x):
+  x = x + Attn(RMSNorm(x))    ← sliding window + sinks
+  x = x + MoE(RMSNorm(x))     ← top-4 expert dispatch
+  return x</div>
+ <table class="spec-table"><tr><th>Per-Layer Component</th><th>Params (stored)</th></tr>
+ <tr><td>Q + K + V + O projections</td><td>~53M · MXFP4</td></tr>
+ <tr><td>2× RMSNorm γ weights</td><td>2 × 2,880 = 5,760</td></tr>
+ <tr><td>Router (ffn_gate_inp)</td><td>92,160</td></tr>
+ <tr><td>32 expert gate+up+down</td><td>~796M · MXFP4</td></tr>
+ <tr><td><b>Total per layer</b></td><td><b>~849M</b></td></tr>
+ <tr><td>24 layers total</td><td>~20.4B</td></tr>
+ </table>
+ <p>In the 3D view: layers 0, 11, 23 are shown in <span class="hl-g">full detail</span>.
+ Layers 1–10 and 12–22 are collapsed to representative residual blocks for performance,
+ with the total span labeled.</p>`},
+
+{id:'rope', label:'YaRN RoPE (131K ctx)', color:'#00d2ff',
+ title:'Step 7 — YaRN Long-Context Rotary Embeddings',
+ body:`<p><span class="hl-b">Rotary Position Embeddings (RoPE)</span> inject relative position
+ information into Q and K vectors during attention. GPT-OSS uses <span class="hl-o">YaRN scaling</span>
+ to extend from the base context of 4,096 to 131,072 tokens.</p>
+ <div class="formula-block">RoPE(q, pos):
+  Apply rotation matrix R(pos, θ) to first 64 dims of each head
+  Remaining 64 dims: no rotation (NTK-style partial RoPE)
+
+YaRN parameters:
+  θ_base = 150,000  (vs. LLaMA's 10,000)
+  scale  = 32×      (extends 4,096 → 131,072)
+  type   = 'yarn'   (frequency interpolation)</div>
+ <table class="spec-table"><tr><th>Parameter</th><th>Value</th></tr>
+ <tr><td>RoPE θ base</td><td>150,000</td></tr>
+ <tr><td>Head dimension</td><td>128 total</td></tr>
+ <tr><td>RoPE dims / head</td><td>64 (first half)</td></tr>
+ <tr><td>Original context</td><td>4,096 tokens</td></tr>
+ <tr><td>YaRN scale factor</td><td>32× → 131,072 tokens</td></tr>
+ <tr><td>Scaling type</td><td>YaRN (frequency interpolation)</td></tr>
+ </table>
+ <p>Note: higher θ=150,000 vs standard 10,000 means slower angular frequency decay,
+ naturally supporting longer sequences before YaRN scaling is even needed.</p>`},
+
+{id:'output', label:'Output & Logits', color:'#56d364',
+ title:'Step 8 — Output Projection & Logits',
+ body:`<p>After the 24th layer, a final <span class="hl-b">RMSNorm</span> normalizes the residual
+ stream. The <span class="hl-g">output weight matrix</span> (same shape as the embedding,
+ 201,088 × 2,880) projects to vocabulary logits.</p>
+ <div class="formula-block">h_final = RMSNorm(x_24)  ∈ ℝ<sup>T × 2880</sup>
+logits  = h_final · W_out  ∈ ℝ<sup>T × 201088</sup>
+next_token = argmax(softmax(logits[-1]))</div>
+ <table class="spec-table"><tr><th>Details</th><th>Value</th></tr>
+ <tr><td>output_norm.weight</td><td>ℝ<sup>2,880</sup> (RMSNorm γ)</td></tr>
+ <tr><td>output.weight</td><td>201,088 × 2,880 · Q8_0</td></tr>
+ <tr><td>Logits shape</td><td>(T, 201,088)</td></tr>
+ <tr><td>Decode temp/top-p</td><td>typical: 0.7 / 0.9</td></tr>
+ <tr><td>Quant choice</td><td>Q8_0: embedding layers are memory-BW-bound, not compute-bound — MXFP4 doesn't help here</td></tr>
+ </table>
+ <p>In the 3D view: the large <span style="color:#8080ff;font-weight:600">light-blue matrix</span>
+ at the bottom is output.weight. The final <span style="color:#4dcc4d;font-weight:600">green strip</span>
+ is the logit vector (T, vocab).</p>`},
+
+{id:'quant', label:'MXFP4 & Performance', color:'#f0883e',
+ title:'Step 9 — MXFP4 Quantization & Runtime Performance',
+ body:`<p><span class="hl-o">MXFP4 (Microscaling FP4)</span> stores all attention and MoE parameters
+ at 4-bit precision using a shared block exponent per 32 elements. This achieves ~11.5 GB total
+ file size vs ~80 GB for BF16.</p>
+ <div class="code-block">block_mxfp4 layout (17 bytes per 32 elements):
+  byte 0:     shared exponent (E8M0)
+  bytes 1–16: 32 × FP4 values (2 nibbles per byte)
+              LOW nibble  = element j
+              HIGH nibble = element j+16   ← interleaved!</div>
+ <table class="spec-table"><tr><th>Metric</th><th>Value</th></tr>
+ <tr><td>Attention weights</td><td>MXFP4 (17B/32elem blocks)</td></tr>
+ <tr><td>MoE expert weights</td><td>MXFP4</td></tr>
+ <tr><td>Embed / Output</td><td>Q8_0 (34B/32elem blocks)</td></tr>
+ <tr><td>Total file size</td><td>~11.5 GB</td></tr>
+ <tr><td>BF16 equivalent</td><td>~80 GB (7× larger)</td></tr>
+ <tr><td>Speed (RTX 4090)</td><td>~234 tok/s (tg128, GGUF llama.cpp)</td></tr>
+ <tr><td>MXFP4 BW efficiency</td><td>~89% of HBM bandwidth</td></tr>
+ <tr><td>Bottleneck at decode</td><td>HBM bandwidth (memory-bound)</td></tr>
+ </table>
+ <p>The MXFP4 kernel uses <span class="hl-b">__byte_perm + DP4A</span> for dequantization
+ — extracting interleaved nibbles and computing int8 dot products in a single fused pass.
+ At decode time (batch=1), the model is purely bandwidth-bound: ~89% of RTX 4090's 1008 GB/s.</p>`}
+];
+
+// ═══════════════════════════════════════════════════════════════
+// LEFT PANEL
+// ═══════════════════════════════════════════════════════════════
+const tocEl = document.getElementById('toc');
+const detailEl = document.getElementById('detail');
+let activeStep = 0;
+
+function buildTOC() {
+  STEPS.forEach((s, i) => {
+    const d = document.createElement('div');
+    d.className = 'toc-item' + (i === 0 ? ' active' : '');
+    d.innerHTML = `<div class="toc-dot" style="background:${s.color}"></div>${s.label}`;
+    d.onclick = () => goToStep(i);
+    tocEl.appendChild(d);
+  });
+}
+
+function goToStep(i) {
+  activeStep = Math.max(0, Math.min(STEPS.length - 1, i));
+  document.querySelectorAll('.toc-item').forEach((el, j) => el.classList.toggle('active', j === activeStep));
+  renderDetail();
+  highlight3D(STEPS[activeStep].id);
+}
+
+function renderDetail() {
+  const s = STEPS[activeStep];
+  let nav = '<div class="step-nav">';
+  if (activeStep > 0) nav += `<button onclick="goToStep(${activeStep-1})">← ${STEPS[activeStep-1].label}</button>`;
+  if (activeStep < STEPS.length - 1) nav += `<button onclick="goToStep(${activeStep+1})">${STEPS[activeStep+1].label} →</button>`;
+  nav += '</div>';
+  detailEl.innerHTML = `<div class="step"><div class="step-header">
+    <div class="step-num" style="background:${s.color}22;color:${s.color};border:1px solid ${s.color}44">${activeStep}</div>
+    <div class="step-title" style="color:${s.color}">${s.title}</div>
+  </div>${s.body}${nav}</div>`;
+  detailEl.scrollTop = 0;
+}
+
+buildTOC(); renderDetail();
+document.addEventListener('keydown', e => {
+  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); goToStep(activeStep + 1); }
+  if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   { e.preventDefault(); goToStep(activeStep - 1); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// GLSL SHADERS (bbycroft-style cell rendering)
+// ═══════════════════════════════════════════════════════════════
+const blockVert = `
+uniform vec3 u_nCells;
+varying vec3 v_normal;
+varying vec3 v_blockPos;
+varying vec3 v_cubePos;
+varying vec3 v_worldPos;
+void main() {
+  v_normal = normalize(normalMatrix * normal);
+  v_cubePos = position.xyz + 0.5;
+  v_blockPos = v_cubePos * u_nCells;
+  vec4 wp = modelMatrix * vec4(position, 1.0);
+  v_worldPos = wp.xyz;
+  gl_Position = projectionMatrix * viewMatrix * wp;
+}`;
+
+const blockFrag = `
+precision highp float;
+varying vec3 v_normal;
+varying vec3 v_blockPos;
+varying vec3 v_cubePos;
+varying vec3 v_worldPos;
+uniform vec3 u_baseColor;
+uniform float u_highlight;
+uniform float u_opacity;
+uniform vec3 u_nCells;
+uniform float u_seed;
+uniform vec3 u_camPos;
+uniform vec3 u_hoverCell;
+
+float hash31(vec3 p) {
+  p = fract(p * vec3(.1031, .1030, .0973));
+  p += dot(p, p.yxz + 33.33);
+  return fract((p.x + p.y) * p.z);
+}
+
+void main() {
+  vec3 n = normalize(v_normal);
+  vec3 bp = v_blockPos - n * 0.1;
+  ivec3 ibp = ivec3(floor(bp));
+  bool dark = mod(float(ibp.x + ibp.y + ibp.z), 2.0) < 0.5;
+  float dist = length(u_camPos - v_worldPos);
+  float maxD = 500.0, minD = 20.0;
+  float t = clamp((dist - minD) / (maxD - minD), 0.0, 1.0);
+  vec3 base = mix(u_baseColor, vec3(0.5, 0.5, 0.5), 0.45);
+  if (dark) base *= mix(0.86, 1.0, t);
+  if (t < 0.85) {
+    vec3 texBase = mix(base, vec3(0.5), 0.7);
+    vec3 d = fract(bp) - 0.5;
+    float r2 = 0.3 * 0.3;
+    bool iX = d.y*d.y + d.z*d.z < r2;
+    bool iY = d.x*d.x + d.z*d.z < r2;
+    bool iZ = d.x*d.x + d.y*d.y < r2;
+    if (iX || iY || iZ) {
+      float val = hash31(vec3(ibp) + u_seed * 0.037) * 2.0 - 1.0;
+      float w = pow(abs(val), 0.7);
+      vec3 neg  = vec3(0.03, 0.03, 0.1);
+      vec3 pos  = u_baseColor;
+      vec3 zero = vec3(0.5);
+      vec3 vc = mix(mix(zero, neg, w), mix(zero, pos, w), step(0.0, val));
+      texBase = vc;
+    }
+    base = mix(texBase, base, t);
+  }
+  vec3 b16 = v_blockPos / 16.0;
+  vec3 px16 = 1.0 / fwidth(b16);
+  float str16 = min(min(px16.x, px16.y), px16.z);
+  float vis16 = smoothstep(2.0, 10.0, str16);
+  vec3 g16 = 1.0 - abs(fract(b16 - 0.5) - 0.5) * px16;
+  float l16 = max(max(g16.x, g16.y), g16.z) * vis16;
+  vec3 cp = v_cubePos - n * 0.05;
+  vec3 eg = 1.0 - abs(fract(cp - 0.5) - 0.5) / fwidth(cp);
+  float lEdge = max(max(eg.x, eg.y), eg.z);
+  vec3 edgeCol = vec3(1.0);
+  vec3 gridCol = vec3(1.0) * 0.65;
+  float lineW = smoothstep(0.0, 1.0, max(l16, lEdge));
+  base = mix(base, lEdge > 0.0 ? edgeCol : gridCol, lineW * 0.55);
+  if (u_hoverCell.x >= 0.0) {
+    ivec3 hc = ivec3(u_hoverCell);
+    bool exact = (ibp.x == hc.x && ibp.y == hc.y && ibp.z == hc.z);
+    bool sameRow = (ibp.y == hc.y);
+    bool sameCol = (ibp.x == hc.x);
+    if (exact) base = mix(base, vec3(1.0, 1.0, 0.4), 0.75);
+    else if (sameRow || sameCol) base = mix(base, vec3(1.0, 1.0, 0.9), 0.1);
+  }
+  vec3 lDir = normalize(vec3(0.4, 1.0, 0.6));
+  float diff = max(dot(n, lDir), 0.0);
+  vec3 lit = base * (0.35 + diff * 0.65);
+  vec3 col = mix(lit * 0.65, u_baseColor, u_highlight);
+  gl_FragColor = vec4(col, u_opacity);
+}`;
+
+// ═══════════════════════════════════════════════════════════════
+// THREE.JS SCENE SETUP
+// ═══════════════════════════════════════════════════════════════
+const container = document.getElementById('three-wrap');
+const tooltip3d = document.getElementById('tooltip3d');
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x06090f);
+
+const camera = new THREE.PerspectiveCamera(42, container.clientWidth / container.clientHeight, 0.1, 6000);
+camera.position.set(90, 220, 360);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(container.clientWidth, container.clientHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+container.appendChild(renderer.domElement);
+
+const labelRenderer = new THREE.CSS2DRenderer();
+labelRenderer.setSize(container.clientWidth, container.clientHeight);
+labelRenderer.domElement.style.position = 'absolute';
+labelRenderer.domElement.style.top = '0';
+labelRenderer.domElement.style.pointerEvents = 'none';
+container.appendChild(labelRenderer.domElement);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.dampingFactor = 0.08;
+controls.minDistance = 5; controls.maxDistance = 3000;
+controls.target.set(0, 80, 0);
+
+scene.add(new THREE.AmbientLight(0x223355, 0.6));
+const dL = new THREE.DirectionalLight(0xffffff, 0.8);
+dL.position.set(60, 200, 80); scene.add(dL);
+
+const grid = new THREE.GridHelper(1200, 240, 0x111a22, 0x0a1018);
+grid.position.y = -4; scene.add(grid);
+
+// ═══════════════════════════════════════════════════════════════
+// BLOCK FACTORY
+// ═══════════════════════════════════════════════════════════════
+const COL_W  = new THREE.Color(0.3, 0.3, 1.0);   // blue — MXFP4 weights
+const COL_W8 = new THREE.Color(0.5, 0.5, 1.0);   // light blue — Q8_0 weights
+const COL_I  = new THREE.Color(0.3, 0.8, 0.3);   // green — intermediate values
+const COL_A  = new THREE.Color(0.7, 0.3, 0.3);   // red — aggregates / norms
+const COL_R  = new THREE.Color(1.0, 0.42, 0.18); // orange — router gate
+
+function typeColor(t) {
+  if (t === 'w')  return COL_W;
+  if (t === 'w8') return COL_W8;
+  if (t === 'a')  return COL_A;
+  if (t === 'r')  return COL_R;
+  return COL_I;
+}
+
+const CELL = 0.3;
+function dsc(n) { return Math.max(2, Math.round(n / 64)); }
+
+const allBlocks = [];
+let seedCounter = 1;
+
+function mkBlock(o) {
+  const cx = o.cx || 2, cy = o.cy || 2, cz = o.cz || 1;
+  const w = cx * CELL, h = cy * CELL, d = Math.max(cz * CELL, CELL * 0.5);
+  const g = new THREE.BoxGeometry(w, h, d);
+  const col = typeColor(o.type || 'i');
+  const sd = seedCounter++;
+  const mat = new THREE.ShaderMaterial({
+    uniforms: {
+      u_baseColor:  { value: col.clone() },
+      u_nCells:     { value: new THREE.Vector3(cx, cy, cz) },
+      u_highlight:  { value: 0.0 },
+      u_opacity:    { value: o.opacity ?? 0.85 },
+      u_seed:       { value: sd },
+      u_camPos:     { value: new THREE.Vector3() },
+      u_hoverCell:  { value: new THREE.Vector3(-1, -1, -1) }
+    },
+    vertexShader: blockVert,
+    fragmentShader: blockFrag,
+    transparent: true,
+    side: THREE.DoubleSide,
+    depthWrite: true
+  });
+  if (o.color) mat.uniforms.u_baseColor.value = new THREE.Color(o.color);
+  const mesh = new THREE.Mesh(g, mat);
+  mesh.position.set(o.x || 0, o.y || 0, o.z || 0);
+  mesh.userData = {
+    label: o.name || '',
+    dimLabel: o.dimLabel || '',
+    sectionId: o.sectionId || 'overview',
+    baseOpacity: o.opacity ?? 0.85,
+    blockType: o.type || 'i'
+  };
+  scene.add(mesh);
+  allBlocks.push(mesh);
+  if (o.name && !o.small) {
+    const div = document.createElement('div');
+    div.className = 'blk-label';
+    div.textContent = o.name;
+    const lbl = new THREE.CSS2DObject(div);
+    lbl.position.set(0, h / 2 + 0.7, d / 2 + 0.25);
+    mesh.add(lbl);
+  }
+  return mesh;
+}
+
+function mkArrow(from, to, color, opacity) {
+  const mid = new THREE.Vector3().lerpVectors(from, to, 0.5);
+  mid.y += Math.abs(from.y - to.y) * 0.18 + 2;
+  const curve = new THREE.QuadraticBezierCurve3(from, mid, to);
+  const tg = new THREE.TubeGeometry(curve, 20, 0.1, 5, false);
+  const tm = new THREE.MeshBasicMaterial({ color: color || 0x556677, transparent: true, opacity: opacity || 0.3 });
+  const m = new THREE.Mesh(tg, tm); scene.add(m); return m;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// GPT-OSS 20B MODEL LAYOUT
+// ═══════════════════════════════════════════════════════════════
+// Architecture (from GGUF metadata):
+//   block_count=24, embedding_length=2880, feed_forward_length=2880
+//   attention.head_count=64, attention.head_count_kv=8
+//   attention.key_length=64 (RoPE dims), actual head_dim=128
+//   expert_count=32, expert_used_count=4
+//   expert_feed_forward_length=2880
+//   attention.sliding_window=128
+//   rope.freq_base=150000, rope.scaling.type=yarn, factor=32
+//   context_length=131072, tokenizer vocab=201088
+
+const C    = 2880;   // hidden dim
+const nQ   = 64;    // Q heads
+const nKV  = 8;     // KV heads
+const HD   = 128;   // head dim (actual, derived from tensor shapes)
+const DQ   = nQ * HD;   // 8192 — Q projection output dim
+const DKV  = nKV * HD;  // 1024 — KV projection output dim
+const NE   = 32;    // total experts
+const AE   = 4;     // active experts (top-k)
+const EFF  = 2880;  // expert FFN intermediate dim
+const T    = 8;     // display sequence length (conceptual)
+const VOCAB = 201088;
+const margin = 3;
+
+// Display cell counts
+const dC    = dsc(C);                       // 45
+const dT    = Math.max(4, dsc(T));          // 4
+const dDQ   = Math.min(80, dsc(DQ));        // min(80, 128) = 80
+const dDKV  = Math.max(6, dsc(DKV));        // 16
+const dEFF  = dsc(EFF);                     // 45
+const dVocab = Math.min(140, dsc(VOCAB));   // 140 (capped)
+
+// X-axis layout (residual at x=0, weights to left)
+const leftX = -(dT * CELL / 2) - margin;
+const lnX   = leftX - dT * CELL - margin;
+const wX    = lnX - dC * CELL * 0.5 - margin * 2;   // weight column center
+
+// Z spread for MoE experts: 32 slabs
+const NE_STEP = 1.4; // world units between expert slab centers (Z axis)
+const expertBaseX = wX - dDQ * CELL * 0.5 - margin;  // behind Q weights
+
+let y = 260; // start Y position (decrements as we go down the model)
+
+// ── SECTION: EMBEDDING ──────────────────────────────────────
+const tokIds = mkBlock({
+  cx: dT, cy: 1, cz: 1, x: 0, y: y, z: 0,
+  type: 'i', name: 'Token IDs', dimLabel: `(${T},) integer sequence`,
+  sectionId: 'tokenize'
+});
+y -= CELL + margin;
+
+// Embedding weight matrix (Q8_0, shown slightly to the left)
+const embW = mkBlock({
+  cx: dVocab, cy: dC, cz: 1,
+  x: leftX - dVocab * CELL * 0.5 - margin * 2,
+  y: y - dC * CELL * 0.5, z: 0,
+  type: 'w8',
+  name: 'Token Embed', dimLabel: `(201,088 × 2,880) Q8_0`,
+  sectionId: 'embed'
+});
+
+// Input residual stream
+const resEmbed = mkBlock({
+  cx: dT, cy: dC, cz: 1, x: 0, y: y - dC * CELL * 0.5, z: 0,
+  type: 'i', name: 'Input Embed', dimLabel: `(${T}, 2,880) residual`,
+  sectionId: 'embed'
+});
+mkArrow(
+  new THREE.Vector3(embW.position.x + dVocab * CELL * 0.5, embW.position.y, 0),
+  resEmbed.position.clone(), 0x4dcc4d, 0.25
+);
+y -= dC * CELL + margin * 2;
+
+// ── SECTION: 24 TRANSFORMER LAYERS ──────────────────────────
+const DETAIL_LAYERS = new Set([0, 11, 23]);
+
+for (let i = 0; i < 24; i++) {
+  const isDetail = DETAIL_LAYERS.has(i);
+
+  if (isDetail) {
+    // ── Pre-attention RMSNorm ──
+    mkBlock({
+      cx: dT, cy: 1, cz: 1, x: lnX - dT * CELL * 0.5, y: y, z: 0,
+      type: 'a',
+      name: i === 0 ? 'RMSNorm' : '',
+      dimLabel: `Layer ${i} pre-attn RMSNorm`,
+      sectionId: 'attention', small: true, opacity: 0.75
+    });
+    // LN gamma weight
+    mkBlock({
+      cx: 1, cy: dC, cz: 1, x: wX, y: y - dC * CELL * 0.5, z: 0,
+      type: 'a', name: i === 0 ? 'γ' : '',
+      dimLabel: `RMSNorm γ ∈ ℝ^2880`, sectionId: 'attention',
+      small: true, opacity: 0.65
+    });
+    y -= CELL + margin;
+
+    // LN output
+    const lnOut = mkBlock({
+      cx: dT, cy: dC, cz: 1, x: lnX - dT * CELL * 0.5, y: y - dC * CELL * 0.5, z: 0,
+      type: 'i', name: i === 0 ? 'Normed x' : '',
+      dimLabel: `(${T}, 2880) normalized`, sectionId: 'attention', opacity: 0.78
+    });
+
+    // Q weight — wide (2880×8192)
+    const qW = mkBlock({
+      cx: dC, cy: dDQ, cz: 1,
+      x: wX - dC * CELL * 0.5 - margin,
+      y: y - dDQ * CELL * 0.5, z: 0,
+      type: 'w',
+      name: i === 0 ? 'W_Q' : '',
+      dimLabel: `W_Q (2,880 × 8,192)\n64 heads × 128-d · MXFP4`,
+      sectionId: 'attention'
+    });
+
+    // K weight — narrow (2880×1024)
+    const kW = mkBlock({
+      cx: dC, cy: dDKV, cz: 1,
+      x: wX - dC * CELL * 0.5 - margin * 3 - dDQ * CELL,
+      y: y - dDKV * CELL * 0.5, z: 0,
+      type: 'w',
+      name: i === 0 ? 'W_K' : '',
+      dimLabel: `W_K (2,880 × 1,024)\n8 KV heads × 128-d · MXFP4`,
+      sectionId: 'attention', opacity: 0.75
+    });
+
+    // V weight — same as K
+    mkBlock({
+      cx: dC, cy: dDKV, cz: 1,
+      x: wX - dC * CELL * 0.5 - margin * 3 - dDQ * CELL,
+      y: y - dDKV * CELL * 0.5, z: dDKV * CELL + margin,
+      type: 'w',
+      name: i === 0 ? 'W_V' : '',
+      dimLabel: `W_V (2,880 × 1,024)\n8 KV heads × 128-d · MXFP4`,
+      sectionId: 'attention', opacity: 0.75
+    });
+
+    // Attention sinks (small)
+    mkBlock({
+      cx: dsc(8), cy: dsc(128), cz: 1,
+      x: wX - dC * CELL * 0.5 - margin * 4 - dDQ * CELL - dC * CELL,
+      y: y - dsc(128) * CELL * 0.5, z: 0,
+      type: 'w', name: i === 0 ? 'Sinks' : '',
+      dimLabel: `attn_sinks: 8 × 128\n1 sink per KV head`,
+      sectionId: 'attention', small: false, opacity: 0.6
+    });
+
+    // QKV combined activation
+    const qkvA = mkBlock({
+      cx: dT, cy: dsc(DQ + DKV * 2), cz: 1,
+      x: lnX - dT * CELL * 0.5 - margin * 2 - dT * CELL,
+      y: y - dsc(DQ + DKV * 2) * CELL * 0.5, z: 0,
+      type: 'i', name: i === 0 ? 'Q,K,V' : '',
+      dimLabel: `Q(${T}×8192) + K,V(${T}×1024)`,
+      sectionId: 'attention', opacity: 0.72
+    });
+
+    y -= Math.max(dDQ, dDKV) * CELL + margin;
+
+    // Output projection weight (8192×2880)
+    mkBlock({
+      cx: dDQ, cy: dC, cz: 1,
+      x: wX - dDQ * CELL * 0.5 - margin,
+      y: y - dC * CELL * 0.5, z: 0,
+      type: 'w', name: i === 0 ? 'W_O' : '',
+      dimLabel: `W_O (8,192 × 2,880) · MXFP4`,
+      sectionId: 'attention', opacity: 0.82
+    });
+
+    // Attention output
+    const attnOut = mkBlock({
+      cx: dT, cy: dC, cz: 1, x: lnX - dT * CELL * 0.5, y: y - dC * CELL * 0.5, z: 0,
+      type: 'i', name: i === 0 ? 'Attn Out' : '',
+      dimLabel: `(${T}, 2880) after W_O`, sectionId: 'attention', opacity: 0.78
+    });
+
+    // Attn residual (main stream)
+    const attnRes = mkBlock({
+      cx: dT, cy: dC, cz: 1, x: 0, y: y - dC * CELL * 0.5, z: 0,
+      type: 'i', name: `L${i} attn+res`,
+      dimLabel: `(${T}, 2880) x + Attn(x)`, sectionId: 'layers'
+    });
+    mkArrow(attnOut.position.clone(), attnRes.position.clone(), 0x4dcc4d, 0.2);
+    y -= dC * CELL + margin;
+
+    // ── Pre-MLP RMSNorm ──
+    mkBlock({
+      cx: dT, cy: 1, cz: 1, x: lnX - dT * CELL * 0.5, y: y, z: 0,
+      type: 'a', name: '',
+      dimLabel: `Layer ${i} pre-MLP RMSNorm`,
+      sectionId: 'attention', small: true, opacity: 0.65
+    });
+    y -= CELL + margin;
+
+    // ── MoE Router gate ──
+    const routerX = lnX - dT * CELL * 0.5 - margin * 1.5 - dsc(NE) * CELL * 0.5;
+    const routerY = y - dC * CELL * 0.5;
+    const routerMesh = mkBlock({
+      cx: dsc(NE), cy: dC, cz: 1,
+      x: routerX, y: routerY, z: 0,
+      type: 'r',
+      name: i === 0 ? 'Router Gate' : '',
+      dimLabel: `ffn_gate_inp: 2880→32\nrouter selects top-4 of 32`,
+      sectionId: 'router', opacity: 0.88
+    });
+
+    // ── 32 Expert weight slabs (spread in Z) ──
+    const expertY = y - dEFF * CELL * 0.5;
+    const expertX = expertBaseX - dC * CELL * 0.5;
+
+    for (let e = 0; e < NE; e++) {
+      const ez = (e - (NE - 1) * 0.5) * NE_STEP;
+      const isActive = e < AE; // top-4 shown as active
+      mkBlock({
+        cx: dC, cy: dEFF, cz: 1,
+        x: expertX, y: expertY, z: ez,
+        type: isActive ? 'i' : 'w',
+        name: e === 0 ? 'Expert 0 ✓' : e === AE - 1 ? `Expert ${AE-1} ✓` : e === AE ? `Expert ${AE}…${NE-1}` : '',
+        dimLabel: isActive
+          ? `Expert ${e} (ACTIVE)\ngate+up+down: 2880→2880→2880 SwiGLU`
+          : `Expert ${e} (inactive this token)\ngate+up+down: 2880→2880→2880`,
+        sectionId: isActive ? 'experts' : 'router',
+        opacity: isActive ? 0.88 : 0.22,
+        small: e > 0 && e < AE - 1
+      });
+      // Arrow from router to active experts
+      if (isActive) {
+        mkArrow(
+          new THREE.Vector3(routerX + dsc(NE) * CELL * 0.5, routerY, 0),
+          new THREE.Vector3(expertX - dC * CELL * 0.5, expertY, ez),
+          0xff8844, 0.35
+        );
+      }
+    }
+
+    // Expert output on residual stream
+    const moeOut = mkBlock({
+      cx: dT, cy: dC, cz: 1, x: 0, y: expertY, z: 0,
+      type: 'i', name: `L${i} MoE+res`,
+      dimLabel: `(${T}, 2880)\nΣ weight_e · Expert_e(x)  (4 experts)`,
+      sectionId: 'experts'
+    });
+    mkArrow(
+      new THREE.Vector3(expertX, expertY, (AE - 1 - (NE - 1) * 0.5) * NE_STEP * 0.5),
+      moeOut.position.clone(), 0x4dcc4d, 0.22
+    );
+    mkArrow(routerMesh.position.clone(), moeOut.position.clone(), 0xff6b35, 0.15);
+
+    y -= dEFF * CELL + margin * 3;
+
+  } else {
+    // ── COLLAPSED LAYER ──
+    const labelStr = (i === 1) ? 'Layers 1–10' : (i === 12) ? 'Layers 12–22' : '';
+    if (i === 1 || i === 12) {
+      mkBlock({
+        cx: dT, cy: dC, cz: 1, x: 0, y: y - dC * CELL * 0.5, z: 0,
+        type: 'i',
+        name: labelStr,
+        dimLabel: `(${T}, 2880) stacked residual\n${i === 1 ? '10' : '11'} collapsed layers`,
+        sectionId: 'layers',
+        opacity: 0.35
+      });
+      y -= dC * CELL + margin * 0.6;
+    } else {
+      y -= margin * 0.4;
+    }
+  }
+}
+
+// ── SECTION: FINAL OUTPUT ────────────────────────────────────
+// Output RMSNorm
+mkBlock({
+  cx: dT, cy: 1, cz: 1, x: lnX - dT * CELL * 0.5, y: y, z: 0,
+  type: 'a', name: 'Output Norm',
+  dimLabel: `output_norm.weight ∈ ℝ^2880\nfinal RMSNorm γ`,
+  sectionId: 'output', opacity: 0.8
+});
+y -= CELL + margin;
+
+// Output norm result
+const normFinal = mkBlock({
+  cx: dT, cy: dC, cz: 1, x: 0, y: y - dC * CELL * 0.5, z: 0,
+  type: 'i', name: 'Normed Final',
+  dimLabel: `(${T}, 2880) normalized`, sectionId: 'output', opacity: 0.8
+});
+y -= dC * CELL + margin;
+
+// Output weight (Q8_0, large matrix)
+const outW = mkBlock({
+  cx: dVocab, cy: dC, cz: 1,
+  x: leftX - dVocab * CELL * 0.5 - margin * 2,
+  y: y - dC * CELL * 0.5, z: 0,
+  type: 'w8', name: 'Output W (LM Head)',
+  dimLabel: `output.weight (201,088 × 2,880)\nQ8_0 — LM head / vocab projection`,
+  sectionId: 'output'
+});
+
+// Logits
+const logits = mkBlock({
+  cx: dT, cy: Math.min(40, dsc(VOCAB)), cz: 1,
+  x: 0, y: y - Math.min(40, dsc(VOCAB)) * CELL * 0.5, z: 0,
+  type: 'i', name: 'Logits',
+  dimLabel: `(${T}, 201,088)\nnext-token probabilities`,
+  sectionId: 'output', opacity: 0.75
+});
+mkArrow(
+  new THREE.Vector3(outW.position.x + dVocab * CELL * 0.5, outW.position.y, 0),
+  logits.position.clone(), 0x56d364, 0.25
+);
+y -= Math.min(40, dsc(VOCAB)) * CELL + margin * 4;
+
+// ── DATA FLOW PARTICLES ─────────────────────────────────────
+const modelTop = 260, modelBot = y - 10;
+const pCount = 250;
+const pGeo = new THREE.BufferGeometry();
+const pP = new Float32Array(pCount * 3);
+const pC = new Float32Array(pCount * 3);
+const pS = new Float32Array(pCount);
+for (let i = 0; i < pCount; i++) {
+  pP[i*3]   = (Math.random() - 0.5) * 50;
+  pP[i*3+1] = modelBot + Math.random() * (modelTop - modelBot);
+  pP[i*3+2] = (Math.random() - 0.5) * 40;
+  pS[i] = 0.05 + Math.random() * 0.18;
+  const frac = (pP[i*3+1] - modelBot) / (modelTop - modelBot);
+  const c = new THREE.Color().setHSL(frac * 0.35 + 0.5, 0.7, 0.55);
+  pC[i*3] = c.r; pC[i*3+1] = c.g; pC[i*3+2] = c.b;
+}
+pGeo.setAttribute('position', new THREE.BufferAttribute(pP, 3));
+pGeo.setAttribute('color', new THREE.BufferAttribute(pC, 3));
+const particles = new THREE.Points(pGeo, new THREE.PointsMaterial({
+  size: 0.5, vertexColors: true, transparent: true, opacity: 0.45, sizeAttenuation: true
+}));
+scene.add(particles);
+
+// ═══════════════════════════════════════════════════════════════
+// REACTIVE ARC CONNECTION SYSTEM
+// ═══════════════════════════════════════════════════════════════
+const SECTION_FLOW = ['tokenize','embed','attention','router','experts','layers','rope','output','quant'];
+const cellInfoEl = document.getElementById('cellInfo');
+const ciValEl    = document.getElementById('ciVal');
+const ciConnEl   = document.getElementById('ciConn');
+
+function getConnectedBlocks(blockIdx) {
+  const block = allBlocks[blockIdx];
+  const sid = block.userData.sectionId;
+  const result = new Set();
+  const sameSec = [];
+  allBlocks.forEach((b, i) => {
+    if (i !== blockIdx && b.userData.sectionId === sid)
+      sameSec.push({ idx: i, dist: block.position.distanceTo(b.position) });
+  });
+  sameSec.sort((a, b) => a.dist - b.dist);
+  sameSec.slice(0, 5).forEach(s => result.add(s.idx));
+  const fi = SECTION_FLOW.indexOf(sid);
+  [fi - 1, fi + 1].forEach(adj => {
+    if (adj < 0 || adj >= SECTION_FLOW.length) return;
+    let best = -1, bd = Infinity;
+    allBlocks.forEach((b, i) => {
+      if (b.userData.sectionId === SECTION_FLOW[adj]) {
+        const d = block.position.distanceTo(b.position);
+        if (d < bd) { bd = d; best = i; }
+      }
+    });
+    if (best >= 0 && bd < 200) result.add(best);
+  });
+  return result;
+}
+
+const arcGroup = new THREE.Group(); scene.add(arcGroup);
+let arcTargetSet = new Set();
+
+const hitDiscGeo = new THREE.CircleGeometry(0.35, 16);
+const hitDiscMat = new THREE.MeshBasicMaterial({ color: 0xffff44, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
+const hitDisc = new THREE.Mesh(hitDiscGeo, hitDiscMat);
+hitDisc.visible = false; scene.add(hitDisc);
+const hitRingGeo = new THREE.RingGeometry(0.5, 0.65, 20);
+const hitRingMat = new THREE.MeshBasicMaterial({ color: 0xffee66, transparent: true, opacity: 0.5, side: THREE.DoubleSide });
+const hitRing = new THREE.Mesh(hitRingGeo, hitRingMat);
+hitRing.visible = false; scene.add(hitRing);
+
+function clearArcs() {
+  arcGroup.children.forEach(c => { if (c.geometry) c.geometry.dispose(); if (c.material) c.material.dispose(); });
+  while (arcGroup.children.length) arcGroup.remove(arcGroup.children[0]);
+  arcTargetSet.forEach(i => { if (allBlocks[i]) allBlocks[i].material.uniforms.u_highlight.value = 0; });
+  arcTargetSet.clear();
+}
+
+function spawnArcs(blockIdx, hitPoint) {
+  clearArcs();
+  const conns = getConnectedBlocks(blockIdx);
+  if (!conns.size) return;
+  const srcCol = typeColor(allBlocks[blockIdx].userData.blockType);
+  conns.forEach(ti => {
+    const tgt = allBlocks[ti];
+    const from = hitPoint.clone();
+    const to = tgt.position.clone();
+    const dist = from.distanceTo(to);
+    if (dist < 0.5) return;
+    const dir = new THREE.Vector3().subVectors(to, from).normalize();
+    let right = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 0, 1)).normalize();
+    if (right.length() < 0.01) right.crossVectors(dir, new THREE.Vector3(1, 0, 0)).normalize();
+    const bow = Math.min(dist * 0.28, 20);
+    const cp1 = from.clone().lerp(to, 0.25).add(right.clone().multiplyScalar(bow));
+    const cp2 = from.clone().lerp(to, 0.75).add(right.clone().multiplyScalar(bow * 0.5));
+    const curve = new THREE.CubicBezierCurve3(from, cp1, cp2, to);
+    const pts = curve.getPoints(60);
+    const geom = new THREE.BufferGeometry().setFromPoints(pts);
+    const tgtCol = typeColor(tgt.userData.blockType);
+    const arcCol = srcCol.clone().lerp(tgtCol, 0.4).multiplyScalar(1.4);
+    const mat = new THREE.LineBasicMaterial({ color: arcCol, transparent: true, opacity: 0.55 });
+    const line = new THREE.Line(geom, mat);
+    line.userData._arcPhase = Math.random() * 6.28;
+    arcGroup.add(line);
+    const dotMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 1 });
+    const dot = new THREE.Mesh(new THREE.SphereGeometry(0.18, 6, 6), dotMat);
+    dot.userData._curve = curve;
+    dot.userData._speed = 0.28 + Math.random() * 0.3;
+    dot.userData._phase = Math.random();
+    dot.userData._dotColor = arcCol.clone();
+    arcGroup.add(dot);
+    const epMat = new THREE.MeshBasicMaterial({ color: arcCol, transparent: true, opacity: 0.7 });
+    const ep = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 8), epMat);
+    ep.position.copy(to);
+    ep.userData._glowPhase = Math.random() * 6.28;
+    arcGroup.add(ep);
+    tgt.material.uniforms.u_highlight.value = 0.28;
+    arcTargetSet.add(ti);
+  });
+  ciConnEl.textContent = conns.size + ' connected block' + (conns.size > 1 ? 's' : '');
+}
+
+function getHitCell(block, worldPt) {
+  const lp = block.worldToLocal(worldPt.clone());
+  const p = block.geometry.parameters;
+  const nc = block.material.uniforms.u_nCells.value;
+  const cx = Math.floor(Math.max(0, Math.min(nc.x - 1, (lp.x / p.width  + 0.5) * nc.x)));
+  const cy = Math.floor(Math.max(0, Math.min(nc.y - 1, (lp.y / p.height + 0.5) * nc.y)));
+  const cz = Math.floor(Math.max(0, Math.min(nc.z - 1, (lp.z / p.depth  + 0.5) * nc.z)));
+  return new THREE.Vector3(cx, cy, cz);
+}
+
+function clearHoverCell() {
+  allBlocks.forEach(b => b.material.uniforms.u_hoverCell.value.set(-1, -1, -1));
+}
+
+// ═══════════════════════════════════════════════════════════════
+// INTERACTION — Raycasting, Tooltips, Reactive Arcs
+// ═══════════════════════════════════════════════════════════════
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let hovered = null, hoveredIdx = -1;
+let lastCellX = -1, lastCellY = -1, lastCellZ = -1;
+
+renderer.domElement.addEventListener('mousemove', e => {
+  const r = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((e.clientX - r.left) / r.width) * 2 - 1;
+  mouse.y = -((e.clientY - r.top) / r.height) * 2 + 1;
+  raycaster.setFromCamera(mouse, camera);
+  const hits = raycaster.intersectObjects(allBlocks, false);
+  const newObj = hits.length > 0 ? hits[0].object : null;
+  if (hovered && hovered !== newObj) {
+    hovered.material.uniforms.u_highlight.value = 0;
+    clearHoverCell(); clearArcs();
+    hitDisc.visible = false; hitRing.visible = false;
+    cellInfoEl.classList.remove('show');
+    hovered = null; hoveredIdx = -1;
+    lastCellX = lastCellY = lastCellZ = -1;
+  }
+  if (newObj) {
+    const hit = hits[0];
+    const idx = allBlocks.indexOf(newObj);
+    hitDisc.position.copy(hit.point).addScaledVector(hit.face.normal, 0.06);
+    hitDisc.lookAt(hit.point.clone().add(hit.face.normal));
+    hitDisc.visible = true;
+    hitRing.position.copy(hitDisc.position);
+    hitRing.quaternion.copy(hitDisc.quaternion);
+    hitRing.visible = true;
+    const cell = getHitCell(newObj, hit.point);
+    const cx = Math.round(cell.x), cy = Math.round(cell.y), cz = Math.round(cell.z);
+    newObj.material.uniforms.u_hoverCell.value.copy(cell);
+    const nc = newObj.material.uniforms.u_nCells.value;
+    ciValEl.textContent = `[${cx}, ${cy}]` + (nc.z > 1 ? ` z:${cz}` : ' ');
+    cellInfoEl.classList.add('show');
+    const cellChanged = (cx !== lastCellX || cy !== lastCellY || cz !== lastCellZ);
+    const blockChanged = (hovered !== newObj);
+    if (blockChanged) { hovered = newObj; hoveredIdx = idx; newObj.material.uniforms.u_highlight.value = 0.42; }
+    if (blockChanged || cellChanged) {
+      lastCellX = cx; lastCellY = cy; lastCellZ = cz;
+      spawnArcs(idx, hit.point);
+    }
+    tooltip3d.querySelector('.tt-title').textContent = newObj.userData.label || newObj.userData.sectionId;
+    tooltip3d.querySelector('.tt-body').innerHTML =
+      `<div class="tt-dim">${(newObj.userData.dimLabel || '').replace(/\n/g, '<br>')}</div>` +
+      `<div style="margin-top:4px;font-size:9px;color:#666">Cell [${cx}, ${cy}]</div>`;
+    tooltip3d.classList.add('show');
+    tooltip3d.style.left = (e.clientX + 14) + 'px';
+    tooltip3d.style.top  = (e.clientY + 14) + 'px';
+    renderer.domElement.style.cursor = 'pointer';
+  } else {
+    tooltip3d.classList.remove('show');
+    cellInfoEl.classList.remove('show');
+    renderer.domElement.style.cursor = 'grab';
+  }
+});
+
+renderer.domElement.addEventListener('click', () => {
+  if (hovered && hovered.userData.sectionId) {
+    const idx = STEPS.findIndex(s => s.id === hovered.userData.sectionId);
+    if (idx >= 0) goToStep(idx);
+  }
+});
+
+renderer.domElement.addEventListener('mouseleave', () => {
+  tooltip3d.classList.remove('show');
+  cellInfoEl.classList.remove('show');
+  clearArcs(); clearHoverCell();
+  hitDisc.visible = false; hitRing.visible = false;
+  if (hovered) { hovered.material.uniforms.u_highlight.value = 0; hovered = null; hoveredIdx = -1; }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// SECTION HIGHLIGHTING (camera pan + opacity)
+// ═══════════════════════════════════════════════════════════════
+function highlight3D(sid) {
+  allBlocks.forEach(b => {
+    const match = b.userData.sectionId === sid;
+    b.material.uniforms.u_opacity.value  = match ? b.userData.baseOpacity : 0.06;
+    b.material.uniforms.u_highlight.value = match ? 0.22 : 0.0;
+  });
+  const targets = allBlocks.filter(b => b.userData.sectionId === sid);
+  if (!targets.length) return;
+  const center = new THREE.Vector3();
+  targets.forEach(t => center.add(t.position));
+  center.divideScalar(targets.length);
+  const startT = controls.target.clone();
+  const st = performance.now();
+  function anim(now) {
+    const p = Math.min(1, (now - st) / 850);
+    const e = p < 0.5 ? 2*p*p : -1 + (4 - 2*p)*p;
+    controls.target.lerpVectors(startT, center, e);
+    if (p < 1) requestAnimationFrame(anim);
+  }
+  requestAnimationFrame(anim);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ANIMATION LOOP
+// ═══════════════════════════════════════════════════════════════
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const t = clock.getElapsedTime();
+  controls.update();
+  const cp = camera.position;
+  allBlocks.forEach(b => { b.material.uniforms.u_camPos.value.copy(cp); });
+  // Particle flow
+  const pos = particles.geometry.attributes.position.array;
+  for (let i = 0; i < pCount; i++) {
+    pos[i*3+1] -= pS[i];
+    pos[i*3] += Math.sin(t + i) * 0.008;
+    if (pos[i*3+1] < modelBot) {
+      pos[i*3+1] = modelTop;
+      pos[i*3] = (Math.random() - 0.5) * 50;
+    }
+  }
+  particles.geometry.attributes.position.needsUpdate = true;
+  // Arc animation
+  arcGroup.children.forEach(child => {
+    if (child.userData._curve) {
+      const p = ((t * child.userData._speed + (child.userData._phase || 0)) % 1 + 1) % 1;
+      child.position.copy(child.userData._curve.getPoint(p));
+      child.material.color.copy(child.userData._dotColor || new THREE.Color(1,1,1));
+      child.material.opacity = 0.6 + Math.sin(t * 8 + child.userData._phase * 6) * 0.4;
+    }
+    if (child.userData._glowPhase !== undefined) {
+      child.material.opacity = 0.3 + Math.sin(t * 4 + child.userData._glowPhase) * 0.4;
+    }
+    if (child.userData._arcPhase !== undefined && !child.userData._curve && child.userData._glowPhase === undefined) {
+      child.material.opacity = 0.22 + Math.sin(t * 3 + child.userData._arcPhase) * 0.28;
+    }
+  });
+  // Surface indicator pulse
+  if (hitDisc.visible) {
+    hitDiscMat.opacity = 0.5 + Math.sin(t * 6) * 0.35;
+    hitRingMat.opacity = 0.3 + Math.sin(t * 5) * 0.22;
+    hitRing.scale.setScalar(1 + Math.sin(t * 4) * 0.15);
+  }
+  renderer.render(scene, camera);
+  labelRenderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  const w = container.clientWidth, h = container.clientHeight;
+  camera.aspect = w / h; camera.updateProjectionMatrix();
+  renderer.setSize(w, h); labelRenderer.setSize(w, h);
+});
+
+highlight3D('overview');
+</script>
+</body>
+</html>
