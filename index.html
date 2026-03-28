@@ -50,8 +50,8 @@ header .right { margin-left: auto; font-size: 11px; color: var(--text2); }
 .spec-table th { text-align: left; padding: 6px 10px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text2); border-bottom: 1px solid rgba(255,255,255,0.08); }
 .spec-table td { padding: 5px 10px; border-bottom: 1px solid rgba(255,255,255,0.03); color: var(--text2); }
 .spec-table td:last-child { color: var(--gold); font-family: 'Cascadia Code', 'Fira Code', monospace; font-weight: 600; }
-.formula-block { background: rgba(188,140,255,0.06); border: 1px solid rgba(188,140,255,0.18); border-radius: 6px; padding: 10px 14px; margin: 10px 0; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 11.5px; color: #c9b0ff; line-height: 1.9; }
-.code-block { background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px; padding: 10px 14px; margin: 10px 0; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 11px; color: var(--green); line-height: 1.7; }
+.formula-block { background: rgba(188,140,255,0.06); border: 1px solid rgba(188,140,255,0.18); border-radius: 6px; padding: 10px 14px; margin: 10px 0; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 11.5px; color: #c9b0ff; line-height: 1.9; white-space: pre-wrap; overflow-x: auto; }
+.code-block { background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.05); border-radius: 6px; padding: 10px 14px; margin: 10px 0; font-family: 'Cascadia Code', 'Fira Code', monospace; font-size: 11px; color: var(--green); line-height: 1.7; white-space: pre-wrap; overflow-x: auto; }
 .quant-badge { display: inline-flex; align-items: center; padding: 2px 7px; border-radius: 4px; font-size: 10px; font-family: monospace; font-weight: 700; margin: 2px; }
 .quant-mxfp4 { background: rgba(240,136,62,0.15); border: 1px solid rgba(240,136,62,0.35); color: var(--orange); }
 .quant-q8 { background: rgba(88,166,255,0.12); border: 1px solid rgba(88,166,255,0.25); color: var(--accent); }
@@ -174,7 +174,8 @@ const STEPS = [
  <tr><td>Quantization</td><td>MXFP4 (attn+MoE), Q8_0 (embed)</td></tr>
  <tr><td>File Size</td><td>~11.5 GB (MXFP4)</td></tr>
  <tr><td>Speed (RTX 4090)</td><td>~234 tok/s (tg128)</td></tr>
- </table>`},
+ </table>
+ <p><span class="hl">Why sparse MoE?</span> At decode (batch=1) every forward pass must stream all active weights from VRAM. Activating only 4 of 32 experts loads <span class="hl-g">~3B parameters</span> per token — a <span class="hl-b">6–7× bandwidth saving</span> vs. a dense 20B model. The model <em>trains</em> with full 20B diversity but <em>runs</em> at 3B compute cost. Combined with MXFP4 (4.25 bits/weight), each token requires only ~1.6 GB of weight data to be read from a 1008 GB/s bus — completing in under 2 ms.</p>`},
 
 {id:'tokenize', label:'Tokenization', color:'#58a6ff',
  title:'Step 1 — GPT-4o BPE Tokenizer',
@@ -189,6 +190,12 @@ const STEPS = [
  <tr><td>EOS Token</td><td>ID 200,017</td></tr>
  <tr><td>Byte Fallback</td><td>Yes (256 byte tokens)</td></tr>
  </table>
+ <p>GPT-OSS uses a <span class="hl-b">structured reasoning template</span> that exposes chain-of-thought via named channel tokens. The model reasons internally in an <span class="hl-o">analysis</span> channel — invisible to the user — before the final answer appears in <span class="hl-g">final</span>. This is reflected in the Token Flow Demo on step 9:</p>
+ <div class="code-block">&lt;|start|&gt;user&lt;|message|&gt;{prompt}&lt;|end|&gt;
+&lt;|start|&gt;assistant&lt;|channel|&gt;analysis&lt;|message|&gt;
+  {chain-of-thought — not shown to user}
+&lt;|end|&gt;&lt;|start|&gt;assistant&lt;|channel|&gt;final&lt;|message|&gt;
+  {visible response}</div>
  <p>In the 3D view: the <span class="hl-g">small green strip</span> at the top represents
  the integer token ID sequence (T tokens long for the displayed batch).</p>`},
 
@@ -234,6 +241,7 @@ y = Concat(heads) · W_O  ∈ ℝ<sup>T × 2880</sup></div>
  <tr><td>RoPE dims / head</td><td>64 of 128</td><td>θ=150,000</td></tr>
  <tr><td>GQA ratio</td><td>64Q / 8KV</td><td>8:1 group share</td></tr>
  </table>
+ <p><span class="hl">KV-cache sizing:</span> per token, per layer = 2 (K+V) × 8 heads × 128 d × 2 B (FP16) = <span class="hl-g">4,096 B</span>. Full 131K context × 24 layers = <span class="hl-o">~11.5 GB</span> — fits comfortably alongside the ~11.5 GB model in 24 GB VRAM. With standard MHA (64 KV heads) this would swell to <span class="hl-b">~92 GB</span>, making long-context decode physically impossible on consumer hardware. 8:1 GQA is what makes 131K practical.</p>
  <p>In the 3D view: W_Q is the <span style="color:#4d4dff;font-weight:600">wide blue block</span>
  (2880×8192), W_K/V are narrow blocks (2880×1024), and the QKV activation strip is green.</p>
  <div class="flow-diagram" style="padding:10px 6px 6px">
@@ -271,6 +279,7 @@ weights  = softmax(scores[idx])           (re-normalize)</div>
  <tr><td>Dispatch Weights</td><td>Re-softmax over selected 4</td></tr>
  <tr><td>Why top-4, not all 32?</td><td>8× compute savings; specialization; training contract</td></tr>
  </table>
+ <p><span class="hl">Load balancing:</span> Without regularization, gradient descent collapses routing onto 1–2 experts (<em>expert collapse</em>) — the model degenerates to a dense but wasteful network. An auxiliary <span class="hl-b">load-balancing loss</span> penalizes routing imbalance during training. Even with it, in practice 3–4 experts per layer still dominate (<em>heavy-tail utilization</em>), as visible in the heatmap on step 5. The router weights are <span class="hl-o">Q8_0</span> rather than MXFP4 — at only 92K params it is tiny, but precision here directly affects which experts activate.</p>
  <p>In the 3D view: the <span style="color:#ff6b35;font-weight:600">orange router block</span>
  sits between the residual stream and the expert fan. 32 expert slabs spread in Z (depth);
  4 are shown brighter (conceptually active). Arcs show routing paths.</p>`},
@@ -295,6 +304,7 @@ MoE_output = Σ_{e∈top4} weight_e · Expert_e(x)</div>
  <tr><td colspan="2">Active params / token / layer</td><td>4 × 3 × 8.3M = ~99M</td></tr>
  <tr><td colspan="2">24 layers × 796M stored</td><td><b>~19.1B</b> of 20B total</td></tr>
  </table>
+ <p><span class="hl">FLOP budget per token:</span> 4 active experts × 3 matmuls (gate, up, down) × 2,880² ≈ <span class="hl-g">99.5M MACs</span> per layer — vs. ~795M for a dense model activating all 32 experts. The 1:1 FFN ratio (2,880 intermediate vs. typical ~11,000) is intentional: more experts at smaller size beats fewer large experts at fixed param budget. <span class="hl">SwiGLU gate:</span> SiLU(x) = x·σ(x) is non-monotonic and input-dependent. The product <code style="font-size:10px;color:var(--green)">SiLU(W_gate·x) ⊙ (W_up·x)</code> lets each expert learn <em>which features to preserve</em>, not just scale them — empirically outperforming ReLU and GeLU at matched parameter count.</p>
  <p>The 3D view shows 32 expert slabs fanned out in Z-depth. The <span style="color:#4dcc4d;font-weight:600">bright green slabs</span> are conceptually active; <span style="color:#4d4dff;font-weight:600;opacity:0.5">dim blue</span> are inactive this token.</p>
  <div class="flow-diagram" style="padding:10px 6px 8px">
    <div style="font-size:10px;color:var(--text2);margin-bottom:6px;text-align:center">Expert Utilization Heatmap — simulated routing distribution across 32 experts × 24 layers</div>
@@ -350,6 +360,7 @@ YaRN parameters:
  </table>
  <p>Note: higher θ=150,000 vs standard 10,000 means slower angular frequency decay,
  naturally supporting longer sequences before YaRN scaling is even needed.</p>
+ <p><span class="hl">How YaRN extends context:</span> Naive linear scaling (divide all frequencies by 32) severely degrades short-range attention — close tokens look artificially similar. YaRN instead classifies each dimension into three bands: <span class="hl-b">high-frequency dims</span> (small d, animate fast locally) are <em>left unscaled</em>; <span class="hl-o">mid-frequency dims</span> are linearly interpolated; <span class="hl-g">low-frequency dims</span> (large d, capture document-level structure) receive the full 32× scale. This preserves near-neighbor precision while extending far-range context — visible in the bar chart as the smooth wavelength gradient.</p>
  <div class="flow-diagram" style="padding:10px 6px 8px">
    <div style="font-size:10px;color:var(--text2);margin-bottom:6px;text-align:center">Per-dimension RoPE wavelength — 128-dim head, θ=150,000, YaRN 32×</div>
    <canvas id="ropeCanvas" width="420" height="80" style="display:block;margin:0 auto;border-radius:4px"></canvas>
@@ -375,6 +386,7 @@ next_token = argmax(softmax(logits[-1]))</div>
  <tr><td>Decode temp/top-p</td><td>typical: 0.7 / 0.9</td></tr>
  <tr><td>Quant choice</td><td>Q8_0: embedding layers are memory-BW-bound, not compute-bound — MXFP4 doesn't help here</td></tr>
  </table>
+ <p><span class="hl">Sampling at decode:</span> <code style="font-size:10px;color:#c9b0ff">softmax(logits / T)</code> — temperature 0.7 sharpens the distribution vs. flat uniform at T=1. <span class="hl-b">Top-p=0.9</span> (nucleus) then draws only from the minimal token set summing to 90% probability, pruning incoherent low-probability options while keeping diversity. <span class="hl">Weight tying:</span> <code style="font-size:10px;color:var(--green)">output.weight</code> is the same tensor as <code style="font-size:10px;color:var(--green)">token_embd.weight</code> transposed — saving ~553 MB by sharing the single largest matrix in the model. The embedding rows act as learned prototype vectors in both directions: lookup and projection.</p>
  <p>In the 3D view: the large <span style="color:#8080ff;font-weight:600">light-blue matrix</span>
  at the bottom is output.weight. The final <span style="color:#4dcc4d;font-weight:600">green strip</span>
  is the logit vector (T, vocab).</p>`},
@@ -391,7 +403,13 @@ next_token = argmax(softmax(logits[-1]))</div>
      style="padding:5px 10px;border-radius:5px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);color:var(--text2);font-size:11px;cursor:pointer;font-family:inherit">⟳ Reset</button>
    <span id="demoStatus" style="font-size:10px;color:var(--text2);margin-left:4px">press Play</span>
  </div>
- <div id="tokenStream" style="background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.07);border-radius:6px;padding:8px 10px;min-height:38px;font-family:monospace;font-size:12px;line-height:1.6;color:var(--text);margin-bottom:8px;word-break:break-all">
+ <div style="display:flex;align-items:center;gap:8px;margin:0 0 8px;font-size:10px;color:var(--text2)">
+   <span>Speed:</span>
+   <input id="demoSpeedSlider" type="range" min="60" max="900" value="340" step="40"
+     style="flex:1;accent-color:#f778ba" oninput="_demoSpeedMs=+this.value;document.getElementById('demoSpeedVal').textContent=this.value+'ms'">
+   <span id="demoSpeedVal" style="width:42px;text-align:right;color:#f778ba;font-family:monospace">340ms</span>
+ </div>
+ <div id="tokenStream" style="background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.07);border-radius:6px;padding:8px 10px;min-height:38px;max-height:108px;overflow-y:auto;font-family:monospace;font-size:12px;line-height:1.6;color:var(--text);margin-bottom:8px;word-break:break-all">
    <span style="color:var(--text2)">Write a long form camping story:</span>
  </div>
  <canvas id="routerCanvas" width="420" height="96" style="display:block;border-radius:5px;border:1px solid rgba(255,255,255,0.07)"></canvas>
@@ -422,7 +440,8 @@ next_token = argmax(softmax(logits[-1]))</div>
  </table>
  <p>The MXFP4 kernel uses <span class="hl-b">__byte_perm + DP4A</span> for dequantization
  — extracting interleaved nibbles and computing int8 dot products in a single fused pass.
- At decode time (batch=1), the model is purely bandwidth-bound: ~89% of RTX 4090's 1008 GB/s.</p>`}
+ At decode time (batch=1), the model is purely bandwidth-bound: ~89% of RTX 4090's 1008 GB/s.</p>
+ <p><span class="hl">FP4 number format (E2M1):</span> Each nibble encodes 1 sign bit, 2 exponent bits, 1 mantissa bit — representable values ∈ {0, ±0.5, ±1, ±1.5, ±2, ±3, ±4, ±6} × 2<sup>shared_exp</sup>. The 32-element shared E8M0 exponent covers a ±127 dynamic range, aligning the entire block to the dominant magnitude. Effective storage: 32 × 4 bits + 8 bits exponent = <span class="hl-g">4.25 bits/weight</span> (vs. 16 for FP16 = 3.76× compression). The nibble interleaving (LOW=elem j, HIGH=elem j+16) allows the CUDA kernel to unpack two elements per <code style="font-size:10px;color:var(--green)">__byte_perm</code> call and feed directly into <code style="font-size:10px;color:var(--green)">DP4A</code> int8 dot-product instructions.</p>`}
 ];
 
 // ═══════════════════════════════════════════════════════════════
@@ -477,6 +496,10 @@ function renderDetail() {
 
 buildTOC(); renderDetail();
 
+// Shared animation clock — resets on tab-return to avoid phase jumps
+let ANIM_T0 = performance.now();
+document.addEventListener('visibilitychange', () => { if (!document.hidden) ANIM_T0 = performance.now(); });
+
 // ═══════════════════════════════════════════════════════════════
 // SLIDING WINDOW CANVAS (draws when panel shows attention step)
 // ═══════════════════════════════════════════════════════════════
@@ -491,7 +514,7 @@ function drawSlidingWindow() {
   const offY = Math.floor((ch - N * cell) / 2);
   ctx.clearRect(0, 0, cw, ch);
   // Pulse highlight row (animated)
-  const t = performance.now() / 1000;
+  const t = (performance.now() - ANIM_T0) / 1000;
   const highlightRow = Math.floor(((t * 0.6) % 1) * N);
   for (let q = 0; q < N; q++) {
     for (let k = 0; k < N; k++) {
@@ -550,7 +573,7 @@ function drawGqaCanvas() {
   const W = cv.width, H = cv.height;
   ctx.clearRect(0, 0, W, H);
   const nKV = 8, nQ = 64, groupSize = 8;
-  const t = performance.now() / 1000;
+  const t = (performance.now() - ANIM_T0) / 1000;
   const activeGroup = Math.floor((t * 0.7) % nKV);
 
   // Layout
@@ -631,7 +654,7 @@ function drawRopeCanvas() {
   ctx.clearRect(0, 0, W, H);
   const barW = Math.floor(W / HEAD_DIM);
   const maxLog = Math.log10(THETA * Math.pow(HEAD_DIM / 2, 1) * YARN_SCALE);
-  const t = performance.now() / 1000;
+  const t = (performance.now() - ANIM_T0) / 1000;
   for (let d = 0; d < HEAD_DIM; d++) {
     const x = d * barW;
     if (d < ROPE_DIMS) {
@@ -710,7 +733,7 @@ function drawHeatmap() {
   const offX = Math.floor((cw - NE * cellW) / 2);
   const offY = Math.floor((ch - NL * cellH) / 2);
   ctx.clearRect(0, 0, cw, ch);
-  const t = performance.now() / 1000;
+  const t = (performance.now() - ANIM_T0) / 1000;
   for (let l = 0; l < NL; l++) {
     for (let e = 0; e < NE; e++) {
       const v = _expertUtil[l][e];
@@ -1611,7 +1634,7 @@ const DEMO_ROUTING = DEMO_TOKENS.map((tok, ti) => {
   return { scores, top4 };
 });
 
-let _demoPlaying = false, _demoIdx = 0, _demoTimer = null, _demoChannel = '';
+let _demoPlaying = false, _demoIdx = 0, _demoTimer = null, _demoChannel = '', _demoSpeedMs = 340;
 
 function drawRouterCanvas(routing) {
   const cv = document.getElementById('routerCanvas');
@@ -1684,7 +1707,7 @@ function advanceTokenDemo() {
     status.textContent = `${phase} (${_demoIdx+1}/${DEMO_TOKENS.length})`;
   }
   _demoIdx++;
-  _demoTimer = setTimeout(advanceTokenDemo, 340);
+  _demoTimer = setTimeout(advanceTokenDemo, _demoSpeedMs);
 }
 
 function pauseTokenDemo() {
