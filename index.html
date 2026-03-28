@@ -1393,19 +1393,97 @@ renderer.domElement.addEventListener('mouseleave', () => {
 // TOKEN DEMO ENGINE
 // ═══════════════════════════════════════════════════════════════
 // Real tokens from GPT-OSS 20B, seed=42, temp=0.7
-// "Write a long form camping story:"
+// Prompt: "Write a camping story:" → model wraps in chat template,
+// then begins <|channel|>analysis (chain-of-thought) before final answer
+// These are the ACTUAL generated tokens from lc_out.txt capture
 const DEMO_TOKENS = [
-  "\n\n","The","Stars"," Above"," Pine"," Creek","\n\n",
-  "The","summer"," I","'d","been"," waiting"," for"," arrived",
-  " in"," the"," form"," of"," a"," single"," text",
-  " from"," my"," old"," college"," friend"," Dev",":","\"",
-  "Pack"," your"," gear","."," Cedar"," Ridge",","," three"," days",","," no"," phones",".\""
+  // --- Chat template wrapping (prompt tokens echoed) ---
+  {t:'<|start|>',  type:'special'},
+  {t:'user',       type:'special'},
+  {t:'<|message|>',type:'special'},
+  {t:'Write',      type:'text'},
+  {t:' a',         type:'text'},
+  {t:' camping',   type:'text'},
+  {t:' story',     type:'text'},
+  {t:':',          type:'text'},
+  {t:'<|end|>',    type:'special'},
+  // --- Assistant channel header (generated) ---
+  {t:'<|start|>',      type:'special'},
+  {t:'assistant',      type:'special'},
+  {t:'<|channel|>',    type:'special'},
+  {t:'analysis',       type:'channel'},   // thinking channel!
+  {t:'<|message|>',    type:'special'},
+  // --- Model's chain-of-thought (analysis channel) ---
+  {t:'The',        type:'text'},
+  {t:' user',      type:'text'},
+  {t:' wants',     type:'text'},
+  {t:' a',         type:'text'},
+  {t:' camping',   type:'text'},
+  {t:' story',     type:'text'},
+  {t:'.',          type:'text'},
+  {t:' No',        type:'text'},
+  {t:' further',   type:'text'},
+  {t:' constraints',type:'text'},
+  {t:'.',          type:'text'},
+  {t:' I',         type:'text'},
+  {t:' should',    type:'text'},
+  {t:' produce',   type:'text'},
+  {t:' a',         type:'text'},
+  {t:' fairly',    type:'text'},
+  {t:' detailed',  type:'text'},
+  {t:' narrative', type:'text'},
+  {t:',',          type:'text'},
+  {t:' perhaps',   type:'text'},
+  {t:' in',        type:'text'},
+  {t:' a',         type:'text'},
+  {t:' literary',  type:'text'},
+  {t:' style',     type:'text'},
+  {t:'.',          type:'text'},
+  {t:' Could',     type:'text'},
+  {t:' include',   type:'text'},
+  {t:' setting',   type:'text'},
+  {t:',',          type:'text'},
+  {t:' characters',type:'text'},
+  {t:'.',          type:'text'},
+  // --- Switch to final answer channel ---
+  {t:'<|end|>',        type:'special'},
+  {t:'<|start|>',      type:'special'},
+  {t:'assistant',      type:'special'},
+  {t:'<|channel|>',    type:'special'},
+  {t:'final',          type:'channel'},
+  {t:'<|message|>',    type:'special'},
+  // --- Actual story text ---
+  {t:'\n\n',       type:'text'},
+  {t:'The',        type:'text'},
+  {t:' Stars',     type:'text'},
+  {t:' Above',     type:'text'},
+  {t:' Pine',      type:'text'},
+  {t:' Creek',     type:'text'},
+  {t:'\n\n',       type:'text'},
+  {t:'The',        type:'text'},
+  {t:' summer',    type:'text'},
+  {t:' I',         type:'text'},
+  {t:"'d",         type:'text'},
+  {t:' been',      type:'text'},
+  {t:' waiting',   type:'text'},
+  {t:' for',       type:'text'},
+  {t:' arrived',   type:'text'},
+  {t:' in',        type:'text'},
+  {t:' a',         type:'text'},
+  {t:' text',      type:'text'},
+  {t:' from',      type:'text'},
+  {t:' Dev',       type:'text'},
+  {t:':',          type:'text'},
+  {t:' "Pack',     type:'text'},
+  {t:' your',      type:'text'},
+  {t:' gear',      type:'text'},
+  {t:'.',          type:'text'},
 ];
 // Simulated expert routing per token (deterministic pseudo-random, 4 of 32)
 // In a real trace these come from ffn_gate_inp scores
 const _demoRng = (() => { let s = 0x1a2b3c4d; return () => { s ^= s<<13; s ^= s>>17; s ^= s<<5; return (s>>>0)/2**32; }; })();
 const DEMO_ROUTING = DEMO_TOKENS.map((tok, ti) => {
-  // Scores for 32 experts (softmax-like, heavy tail)
+  // Special tokens: routing still happens in attention+FFN layers
   const raw = Array.from({length:32}, (_, e) => {
     const base = _demoRng() * 0.3;
     const bump = (e === (ti*7+3)%32 || e === (ti*11+5)%32) ? _demoRng()*0.7+0.4 : 0;
@@ -1420,7 +1498,7 @@ const DEMO_ROUTING = DEMO_TOKENS.map((tok, ti) => {
   return { scores, top4 };
 });
 
-let _demoPlaying = false, _demoIdx = 0, _demoTimer = null;
+let _demoPlaying = false, _demoIdx = 0, _demoTimer = null, _demoChannel = '';
 
 function drawRouterCanvas(routing) {
   const cv = document.getElementById('routerCanvas');
@@ -1462,22 +1540,36 @@ function advanceTokenDemo() {
   if (_demoIdx >= DEMO_TOKENS.length) { pauseTokenDemo(); return; }
   const tok = DEMO_TOKENS[_demoIdx];
   const routing = DEMO_ROUTING[_demoIdx];
+  // Update channel state when we hit a channel token
+  if (tok.type === 'channel') _demoChannel = tok.t;
   // Append token to stream
   const stream = document.getElementById('tokenStream');
   if (stream) {
     const span = document.createElement('span');
-    span.style.color = '#f778ba';
-    span.style.transition = 'color 0.8s';
-    span.textContent = tok;
+    if (tok.type === 'special') {
+      span.style.color = '#e3b341';
+      span.style.fontSize = '10px';
+      span.style.opacity = '0.85';
+    } else if (tok.type === 'channel') {
+      span.style.color = '#f778ba';
+      span.style.fontWeight = '700';
+    } else {
+      span.style.color = '#aad8ff';
+      span.style.transition = 'color 0.7s';
+      setTimeout(() => { span.style.color = 'var(--text)'; }, 280);
+    }
+    span.textContent = tok.t;
     stream.appendChild(span);
-    setTimeout(() => { span.style.color = 'var(--text)'; }, 300);
     stream.scrollTop = stream.scrollHeight;
   }
   drawRouterCanvas(routing);
   const info = document.getElementById('demoTokenInfo');
   if (info) info.textContent = `tok ${_demoIdx+1}/${DEMO_TOKENS.length} · experts: ${[...routing.top4].sort((a,b)=>a-b).join(',')}`;
   const status = document.getElementById('demoStatus');
-  if (status) status.textContent = `generating… (${_demoIdx+1}/${DEMO_TOKENS.length})`;
+  if (status) {
+    const phase = _demoChannel === 'analysis' ? '🧠 thinking…' : _demoChannel === 'final' ? '✍ writing…' : 'generating…';
+    status.textContent = `${phase} (${_demoIdx+1}/${DEMO_TOKENS.length})`;
+  }
   _demoIdx++;
   _demoTimer = setTimeout(advanceTokenDemo, 340);
 }
@@ -1502,6 +1594,7 @@ function toggleTokenDemo() {
 function resetTokenDemo() {
   pauseTokenDemo();
   _demoIdx = 0;
+  _demoChannel = '';
   const stream = document.getElementById('tokenStream');
   if (stream) stream.innerHTML = '<span style="color:var(--text2)">Write a long form camping story:</span>';
   const cv = document.getElementById('routerCanvas');
