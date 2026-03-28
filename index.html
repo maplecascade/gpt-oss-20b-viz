@@ -244,6 +244,13 @@ y = Concat(heads) · W_O  ∈ ℝ<sup>T × 2880</sup></div>
      <span style="color:#ff6b35">■</span> sink (always visible) &nbsp;
      <span style="color:#1a1f28">■</span> masked (future / outside window)
    </div>
+ </div>
+ <div class="flow-diagram" style="padding:10px 6px 6px;margin-top:8px">
+   <div style="font-size:10px;color:var(--text2);margin-bottom:6px;text-align:center">GQA Head Grouping — 64 Q heads share 8 KV heads (8 Q per KV)</div>
+   <canvas id="gqaCanvas" width="420" height="96" style="display:block;margin:0 auto;border-radius:4px"></canvas>
+   <div style="font-size:9px;color:var(--text2);margin-top:5px;text-align:center">
+     Each column of 8 Q heads (same hue) shares one K head and one V head — 8× KV-cache savings vs MHA
+   </div>
  </div>`},
 
 {id:'router', label:'MoE Router', color:'#ff6b35',
@@ -441,8 +448,8 @@ function goToStep(i) {
   renderDetail();
   highlight3D(STEPS[activeStep].id);
   // Start/stop sliding window canvas
-  if (STEPS[activeStep].id === 'attention') { setTimeout(startSwAnim, 60); }
-  else stopSwAnim();
+  if (STEPS[activeStep].id === 'attention') { setTimeout(startSwAnim, 60); setTimeout(startGqaAnim, 60); }
+  else { stopSwAnim(); stopGqaAnim(); }
   // Start/stop rope canvas
   if (STEPS[activeStep].id === 'rope') { setTimeout(startRopeAnim, 60); }
   else stopRopeAnim();
@@ -528,6 +535,89 @@ function stopSwAnim() { if (_swAnim) { cancelAnimationFrame(_swAnim); _swAnim = 
 const _origGoToStep = goToStep;
 // We override below after definition — patch renderDetail instead
 const _origRenderDetail = renderDetail;
+
+// ═══════════════════════════════════════════════════════════════
+// GQA HEAD GROUPING CANVAS
+// ═══════════════════════════════════════════════════════════════
+const GQA_COLORS = [
+  '#4d4dff','#4dcc4d','#ff6b35','#f778ba','#e3b341','#7ee787','#79c0ff','#ff7b72'
+];
+let _gqaAnimId = null;
+function drawGqaCanvas() {
+  const cv = document.getElementById('gqaCanvas');
+  if (!cv) return;
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  const nKV = 8, nQ = 64, groupSize = 8;
+  const t = performance.now() / 1000;
+  const activeGroup = Math.floor((t * 0.7) % nKV);
+
+  // Layout
+  const kvY = 12, kvW = 30, kvH = 18, kvGap = (W - nKV*kvW) / (nKV + 1);
+  const qY = H - 26, qW = 9, qH = 9;
+  const qGap = (W - nQ*qW) / (nQ + 1);
+
+  // Draw KV heads
+  for (let k = 0; k < nKV; k++) {
+    const x = kvGap + k*(kvW + kvGap);
+    const isActive = k === activeGroup;
+    ctx.fillStyle = GQA_COLORS[k];
+    ctx.globalAlpha = isActive ? 1.0 : 0.35;
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(x, kvY, kvW, kvH, 3);
+    else ctx.rect(x, kvY, kvW, kvH);
+    ctx.fill();
+    ctx.globalAlpha = isActive ? 1.0 : 0.5;
+    ctx.fillStyle = isActive ? '#fff' : GQA_COLORS[k];
+    ctx.font = `bold ${isActive ? 9 : 8}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.fillText(`K${k}`, x + kvW/2, kvY + kvH - 4);
+  }
+  ctx.globalAlpha = 1.0;
+
+  // Draw lines from KV to Q group
+  for (let k = 0; k < nKV; k++) {
+    const kvX = kvGap + k*(kvW + kvGap) + kvW/2;
+    const isActive = k === activeGroup;
+    for (let qi = 0; qi < groupSize; qi++) {
+      const qIdx = k * groupSize + qi;
+      const qX = qGap + qIdx*(qW + qGap) + qW/2;
+      ctx.beginPath();
+      ctx.moveTo(kvX, kvY + kvH);
+      ctx.bezierCurveTo(kvX, kvY + kvH + 20, qX, qY - 20, qX, qY);
+      ctx.strokeStyle = GQA_COLORS[k];
+      ctx.globalAlpha = isActive ? 0.6 : 0.12;
+      ctx.lineWidth = isActive ? 1.5 : 0.8;
+      ctx.stroke();
+    }
+  }
+  ctx.globalAlpha = 1.0;
+
+  // Draw Q heads
+  for (let q = 0; q < nQ; q++) {
+    const k = Math.floor(q / groupSize);
+    const isActive = k === activeGroup;
+    const x = qGap + q*(qW + qGap);
+    ctx.fillStyle = GQA_COLORS[k];
+    ctx.globalAlpha = isActive ? 1.0 : 0.3;
+    ctx.fillRect(x, qY, qW, qH);
+  }
+  ctx.globalAlpha = 1.0;
+
+  // Labels
+  ctx.fillStyle = '#8b949e';
+  ctx.font = '8px sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillText('KV (8)', 3, kvY + 12);
+  ctx.fillText('Q (64)', 3, qY + 8);
+}
+function startGqaAnim() {
+  if (_gqaAnimId) return;
+  function loop() { drawGqaCanvas(); _gqaAnimId = requestAnimationFrame(loop); }
+  loop();
+}
+function stopGqaAnim() { if (_gqaAnimId) { cancelAnimationFrame(_gqaAnimId); _gqaAnimId = null; } }
 
 // ═══════════════════════════════════════════════════════════════
 // ROPE FREQUENCY CANVAS
@@ -880,7 +970,25 @@ function mkArrow(from, to, color, opacity) {
 //   rope.freq_base=150000, rope.scaling.type=yarn, factor=32
 //   context_length=131072, tokenizer vocab=201088
 
-const C    = 2880;   // hidden dim
+// ─── Quantization type map (name pattern → format) ───────────
+const QUANT_MAP = [
+  [/W_[QKV]|W_O|attn/i,           'MXFP4', '#4d4dff'],
+  [/W_gate|W_up|W_down|ffn_.*exp/i,'MXFP4', '#4dcc4d'],
+  [/router|gate_inp/i,             'Q8_0',  '#ff6b35'],
+  [/embed|token/i,                 'Q8_0',  '#ff6b35'],
+  [/output|lm_head/i,              'Q8_0',  '#ff6b35'],
+  [/norm|RMSNorm/i,                'F32',   '#8b949e'],
+  [/activation|act|residual/i,     'F32',   '#8b949e'],
+];
+function getQuantInfo(name) {
+  if (!name) return null;
+  for (const [re, fmt, color] of QUANT_MAP) {
+    if (re.test(name)) return { fmt, color };
+  }
+  return null;
+}
+
+
 const nQ   = 64;    // Q heads
 const nKV  = 8;     // KV heads
 const HD   = 128;   // head dim (actual, derived from tensor shapes)
@@ -1360,8 +1468,12 @@ renderer.domElement.addEventListener('mousemove', e => {
       spawnArcs(idx, hit.point);
     }
     tooltip3d.querySelector('.tt-title').textContent = newObj.userData.label || newObj.userData.sectionId;
+    const qi = getQuantInfo(newObj.userData.label);
+    const quantBadge = qi
+      ? `<span style="display:inline-block;padding:1px 6px;border-radius:3px;background:${qi.color}22;color:${qi.color};border:1px solid ${qi.color}55;font-size:9px;font-weight:700;margin-left:4px">${qi.fmt}</span>`
+      : '';
     tooltip3d.querySelector('.tt-body').innerHTML =
-      `<div class="tt-dim">${(newObj.userData.dimLabel || '').replace(/\n/g, '<br>')}</div>` +
+      `<div class="tt-dim">${(newObj.userData.dimLabel || '').replace(/\n/g, '<br>')}${quantBadge}</div>` +
       `<div style="margin-top:4px;font-size:9px;color:#666">Cell [${cx}, ${cy}]</div>`;
     tooltip3d.classList.add('show');
     tooltip3d.style.left = (e.clientX + 14) + 'px';
