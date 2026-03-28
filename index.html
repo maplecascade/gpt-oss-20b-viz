@@ -235,7 +235,16 @@ y = Concat(heads) · W_O  ∈ ℝ<sup>T × 2880</sup></div>
  <tr><td>GQA ratio</td><td>64Q / 8KV</td><td>8:1 group share</td></tr>
  </table>
  <p>In the 3D view: W_Q is the <span style="color:#4d4dff;font-weight:600">wide blue block</span>
- (2880×8192), W_K/V are narrow blocks (2880×1024), and the QKV activation strip is green.</p>`},
+ (2880×8192), W_K/V are narrow blocks (2880×1024), and the QKV activation strip is green.</p>
+ <div class="flow-diagram" style="padding:10px 6px 6px">
+   <div style="font-size:10px;color:var(--text2);margin-bottom:6px;text-align:center">Sliding Window Attention Mask — 16 tokens shown, window=8 + 2 sinks</div>
+   <canvas id="swCanvas" width="420" height="110" style="display:block;margin:0 auto;border-radius:4px"></canvas>
+   <div style="font-size:9px;color:var(--text2);margin-top:5px;text-align:center">
+     <span style="color:#2d7aff">■</span> attends (in window) &nbsp;
+     <span style="color:#ff6b35">■</span> sink (always visible) &nbsp;
+     <span style="color:#1a1f28">■</span> masked (future / outside window)
+   </div>
+ </div>`},
 
 {id:'router', label:'MoE Router', color:'#ff6b35',
  title:'Step 4 — Mixture-of-Experts Router (top-4 / 32)',
@@ -279,7 +288,17 @@ MoE_output = Σ_{e∈top4} weight_e · Expert_e(x)</div>
  <tr><td colspan="2">Active params / token / layer</td><td>4 × 3 × 8.3M = ~99M</td></tr>
  <tr><td colspan="2">24 layers × 796M stored</td><td><b>~19.1B</b> of 20B total</td></tr>
  </table>
- <p>The 3D view shows 32 expert slabs fanned out in Z-depth. The <span style="color:#4dcc4d;font-weight:600">bright green slabs</span> are conceptually active; <span style="color:#4d4dff;font-weight:600;opacity:0.5">dim blue</span> are inactive this token.</p>`},
+ <p>The 3D view shows 32 expert slabs fanned out in Z-depth. The <span style="color:#4dcc4d;font-weight:600">bright green slabs</span> are conceptually active; <span style="color:#4d4dff;font-weight:600;opacity:0.5">dim blue</span> are inactive this token.</p>
+ <div class="flow-diagram" style="padding:10px 6px 8px">
+   <div style="font-size:10px;color:var(--text2);margin-bottom:6px;text-align:center">Expert Utilization Heatmap — simulated routing distribution across 32 experts × 24 layers</div>
+   <canvas id="heatCanvas" width="420" height="130" style="display:block;margin:0 auto;border-radius:4px"></canvas>
+   <div style="font-size:9px;color:var(--text2);margin-top:5px;display:flex;gap:14px;justify-content:center">
+     <span><span style="color:#1a6622">■</span> rarely used</span>
+     <span><span style="color:#3fb950">■</span> medium load</span>
+     <span><span style="color:#ffcc00">■</span> heavy load</span>
+     <span style="margin-left:6px">← 32 experts | ↑ 24 layers →</span>
+   </div>
+ </div>`},
 
 {id:'layers', label:'24 Transformer Layers', color:'#bc8cff',
  title:'Step 6 — Full Transformer Stack (24 Layers)',
@@ -323,7 +342,16 @@ YaRN parameters:
  <tr><td>Scaling type</td><td>YaRN (frequency interpolation)</td></tr>
  </table>
  <p>Note: higher θ=150,000 vs standard 10,000 means slower angular frequency decay,
- naturally supporting longer sequences before YaRN scaling is even needed.</p>`},
+ naturally supporting longer sequences before YaRN scaling is even needed.</p>
+ <div class="flow-diagram" style="padding:10px 6px 8px">
+   <div style="font-size:10px;color:var(--text2);margin-bottom:6px;text-align:center">Per-dimension RoPE wavelength — 128-dim head, θ=150,000, YaRN 32×</div>
+   <canvas id="ropeCanvas" width="420" height="80" style="display:block;margin:0 auto;border-radius:4px"></canvas>
+   <div style="font-size:9px;color:var(--text2);margin-top:5px;display:flex;gap:14px;justify-content:center">
+     <span><span style="color:#ff4dff">━━</span> rotated dims (0–63)</span>
+     <span><span style="color:#444">━━</span> unrotated dims (64–127)</span>
+     <span><span style="color:#f0883e">│</span> NTK boundary</span>
+   </div>
+ </div>`},
 
 {id:'output', label:'Output & Logits', color:'#56d364',
  title:'Step 8 — Output Projection & Logits',
@@ -344,8 +372,29 @@ next_token = argmax(softmax(logits[-1]))</div>
  at the bottom is output.weight. The final <span style="color:#4dcc4d;font-weight:600">green strip</span>
  is the logit vector (T, vocab).</p>`},
 
-{id:'quant', label:'MXFP4 & Performance', color:'#f0883e',
- title:'Step 9 — MXFP4 Quantization & Runtime Performance',
+{id:'tokendemo', label:'Token Flow Demo', color:'#f778ba',
+ title:'Step 9 — Live Token-by-Token Generation Demo',
+ body:`<p>Watch GPT-OSS 20B generate a camping story <span class="hl-b">token by token</span>.
+ Each step shows the <span class="hl-o">4 experts selected</span> per layer and the routing scores.
+ Token text is real output from the model (seed=42, temp=0.7).</p>
+ <div style="display:flex;gap:8px;align-items:center;margin:10px 0">
+   <button id="demoPlayBtn" onclick="toggleTokenDemo()"
+     style="padding:5px 14px;border-radius:5px;background:rgba(247,120,186,0.15);border:1px solid rgba(247,120,186,0.35);color:#f778ba;font-size:11px;cursor:pointer;font-family:inherit">▶ Play</button>
+   <button onclick="resetTokenDemo()"
+     style="padding:5px 10px;border-radius:5px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);color:var(--text2);font-size:11px;cursor:pointer;font-family:inherit">⟳ Reset</button>
+   <span id="demoStatus" style="font-size:10px;color:var(--text2);margin-left:4px">press Play</span>
+ </div>
+ <div id="tokenStream" style="background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.07);border-radius:6px;padding:8px 10px;min-height:38px;font-family:monospace;font-size:12px;line-height:1.6;color:var(--text);margin-bottom:8px;word-break:break-all">
+   <span style="color:var(--text2)">Write a long form camping story:</span>
+ </div>
+ <canvas id="routerCanvas" width="420" height="96" style="display:block;border-radius:5px;border:1px solid rgba(255,255,255,0.07)"></canvas>
+ <div style="font-size:9px;color:var(--text2);margin-top:4px;display:flex;gap:14px">
+   <span><span style="color:#8080ff">▇</span> router score (all 32)</span>
+   <span><span style="color:#f0883e">▇</span> top-4 selected</span>
+   <span id="demoTokenInfo" style="margin-left:auto"></span>
+ </div>`},
+
+{id:'quant', label:'MXFP4 & Performance', color:'#f0883e', title:'Step 10 — MXFP4 Quantization & Runtime Performance',
  body:`<p><span class="hl-o">MXFP4 (Microscaling FP4)</span> stores all attention and MoE parameters
  at 4-bit precision using a shared block exponent per 32 elements. This achieves ~11.5 GB total
  file size vs ~80 GB for BF16.</p>
@@ -391,6 +440,19 @@ function goToStep(i) {
   document.querySelectorAll('.toc-item').forEach((el, j) => el.classList.toggle('active', j === activeStep));
   renderDetail();
   highlight3D(STEPS[activeStep].id);
+  // Start/stop sliding window canvas
+  if (STEPS[activeStep].id === 'attention') { setTimeout(startSwAnim, 60); }
+  else stopSwAnim();
+  // Start/stop rope canvas
+  if (STEPS[activeStep].id === 'rope') { setTimeout(startRopeAnim, 60); }
+  else stopRopeAnim();
+  // Start/stop expert heatmap
+  if (STEPS[activeStep].id === 'experts') { setTimeout(startHeatAnim, 60); }
+  else stopHeatAnim();
+  // Pause token demo when leaving that step
+  if (STEPS[activeStep].id !== 'tokendemo') pauseTokenDemo();
+  // Auto-start canvas for tokendemo step
+  if (STEPS[activeStep].id === 'tokendemo') { setTimeout(() => { const cv=document.getElementById('routerCanvas'); if(cv&&_demoIdx===0) drawRouterCanvas(DEMO_ROUTING[0]); }, 80); }
 }
 
 function renderDetail() {
@@ -407,6 +469,193 @@ function renderDetail() {
 }
 
 buildTOC(); renderDetail();
+
+// ═══════════════════════════════════════════════════════════════
+// SLIDING WINDOW CANVAS (draws when panel shows attention step)
+// ═══════════════════════════════════════════════════════════════
+function drawSlidingWindow() {
+  const cv = document.getElementById('swCanvas');
+  if (!cv) return;
+  const ctx = cv.getContext('2d');
+  const N = 16, W = 8, SINKS = 2;
+  const cw = cv.width, ch = cv.height;
+  const cell = Math.min(Math.floor(cw / (N + 1.5)), Math.floor(ch / (N + 1)));
+  const offX = Math.floor((cw - N * cell) / 2);
+  const offY = Math.floor((ch - N * cell) / 2);
+  ctx.clearRect(0, 0, cw, ch);
+  // Pulse highlight row (animated)
+  const t = performance.now() / 1000;
+  const highlightRow = Math.floor(((t * 0.6) % 1) * N);
+  for (let q = 0; q < N; q++) {
+    for (let k = 0; k < N; k++) {
+      const isMasked = k > q;
+      const isSink   = k < SINKS && !isMasked;
+      const inWindow = !isMasked && !isSink && (q - k) < W;
+      let fill;
+      if (isMasked)    fill = '#0e1318';
+      else if (isSink) fill = 'rgba(240,107,53,0.75)';
+      else if (inWindow) {
+        const dist = q - k;
+        const fade = 1 - dist / W;
+        const pulse = (q === highlightRow) ? 1.4 : 1;
+        const alpha = (0.25 + fade * 0.65) * pulse;
+        fill = `rgba(45,122,255,${Math.min(1, alpha)})`;
+      } else fill = '#0e1318';
+      ctx.fillStyle = fill;
+      ctx.fillRect(offX + k * cell + 1, offY + q * cell + 1, cell - 2, cell - 2);
+    }
+  }
+  // Axis labels
+  ctx.fillStyle = 'rgba(139,148,158,0.55)';
+  ctx.font = `${Math.max(6, cell - 4)}px monospace`;
+  ctx.textAlign = 'center';
+  for (let i = 0; i < N; i += 4) {
+    ctx.fillText(i, offX + i * cell + cell/2, offY - 2);
+    ctx.fillText(i, offX - 3, offY + i * cell + cell/2 + 3);
+  }
+}
+
+// Animate the sliding window canvas
+let _swAnim = null;
+function startSwAnim() {
+  if (_swAnim) return;
+  function loop() { drawSlidingWindow(); _swAnim = requestAnimationFrame(loop); }
+  loop();
+}
+function stopSwAnim() { if (_swAnim) { cancelAnimationFrame(_swAnim); _swAnim = null; } }
+
+// Hook into goToStep to start/stop canvas animation
+const _origGoToStep = goToStep;
+// We override below after definition — patch renderDetail instead
+const _origRenderDetail = renderDetail;
+
+// ═══════════════════════════════════════════════════════════════
+// ROPE FREQUENCY CANVAS
+// ═══════════════════════════════════════════════════════════════
+function drawRopeCanvas() {
+  const cv = document.getElementById('ropeCanvas');
+  if (!cv) return;
+  const ctx = cv.getContext('2d');
+  const HEAD_DIM = 128, ROPE_DIMS = 64, THETA = 150000, YARN_SCALE = 32;
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  const barW = Math.floor(W / HEAD_DIM);
+  const maxLog = Math.log10(THETA * Math.pow(HEAD_DIM / 2, 1) * YARN_SCALE);
+  const t = performance.now() / 1000;
+  for (let d = 0; d < HEAD_DIM; d++) {
+    const x = d * barW;
+    if (d < ROPE_DIMS) {
+      // Wavelength = 2π / (θ^(-2d/D)) = 2π * θ^(2d/D)
+      const freq = Math.pow(THETA, -2 * d / HEAD_DIM);
+      const wavelength = (2 * Math.PI) / freq;
+      // Scale wavelength logarithmically to bar height
+      const logWL = Math.log10(Math.max(1, wavelength));
+      const maxLogWL = Math.log10(2 * Math.PI * Math.pow(THETA, (HEAD_DIM-2)/HEAD_DIM) * YARN_SCALE);
+      const h = Math.max(4, Math.round((logWL / maxLogWL) * (H - 14)));
+      // Animate a phase ripple
+      const phase = Math.sin(t * 1.2 + d * 0.18) * 0.15;
+      const hue = 280 + d * 1.2; // purple to blue
+      const alpha = 0.7 + phase;
+      ctx.fillStyle = `hsla(${hue},80%,65%,${alpha.toFixed(2)})`;
+      ctx.fillRect(x + 1, H - h - 2, barW - 1, h);
+    } else {
+      // Unrotated dims — grey flat bar
+      ctx.fillStyle = 'rgba(60,70,80,0.5)';
+      ctx.fillRect(x + 1, H - 10, barW - 1, 8);
+    }
+  }
+  // NTK boundary marker at dim 64
+  ctx.strokeStyle = '#f0883e';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([3, 3]);
+  const bx = ROPE_DIMS * barW + 0.5;
+  ctx.beginPath(); ctx.moveTo(bx, 0); ctx.lineTo(bx, H); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(240,136,62,0.55)';
+  ctx.font = '8px monospace';
+  ctx.fillText('dim 64', bx + 2, 10);
+}
+
+let _ropeAnim = null;
+function startRopeAnim() {
+  if (_ropeAnim) return;
+  function loop() { drawRopeCanvas(); _ropeAnim = requestAnimationFrame(loop); }
+  loop();
+}
+function stopRopeAnim() { if (_ropeAnim) { cancelAnimationFrame(_ropeAnim); _ropeAnim = null; } }
+
+// ═══════════════════════════════════════════════════════════════
+// EXPERT HEATMAP CANVAS
+// ═══════════════════════════════════════════════════════════════
+// Simulated expert utilization: heavy-tail distribution (a few experts dominate per layer)
+// Based on MoE literature: top-4/32 routing creates ~3-4 consistently hot experts per layer
+const _expertUtil = (() => {
+  const NE = 32, NL = 24;
+  const rng = (s) => { let x = s; return () => { x ^= x << 13; x ^= x >> 17; x ^= x << 5; return (x >>> 0) / 4294967296; }; };
+  const r = rng(0xdeadbeef);
+  const util = [];
+  for (let l = 0; l < NL; l++) {
+    const row = [];
+    // Each layer has 2-3 "dominant" experts with high utilization
+    const hot = [Math.floor(r() * NE), Math.floor(r() * NE), Math.floor(r() * NE)];
+    for (let e = 0; e < NE; e++) {
+      let base = r() * 0.08 + 0.02;
+      if (hot.includes(e)) base += 0.35 + r() * 0.45;
+      else if (Math.abs(e - hot[0]) < 3) base += r() * 0.18;
+      row.push(Math.min(1, base));
+    }
+    util.push(row);
+  }
+  return util;
+})();
+
+function drawHeatmap() {
+  const cv = document.getElementById('heatCanvas');
+  if (!cv) return;
+  const ctx = cv.getContext('2d');
+  const NE = 32, NL = 24;
+  const cw = cv.width, ch = cv.height;
+  const cellW = Math.floor(cw / NE);
+  const cellH = Math.floor(ch / NL);
+  const offX = Math.floor((cw - NE * cellW) / 2);
+  const offY = Math.floor((ch - NL * cellH) / 2);
+  ctx.clearRect(0, 0, cw, ch);
+  const t = performance.now() / 1000;
+  for (let l = 0; l < NL; l++) {
+    for (let e = 0; e < NE; e++) {
+      const v = _expertUtil[l][e];
+      // Animate a soft pulse on hot cells
+      const pulse = v > 0.5 ? 0.12 * Math.sin(t * 2.5 + e * 0.4 + l * 0.3) : 0;
+      const vv = Math.min(1, v + pulse);
+      // Color: dark green → bright green → yellow
+      let r, g, b;
+      if (vv < 0.5) { r = 0; g = Math.round(40 + vv * 2 * 120); b = 0; }
+      else { r = Math.round((vv - 0.5) * 2 * 255); g = Math.round(160 + (vv - 0.5) * 2 * 95); b = 0; }
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
+      ctx.fillRect(offX + e * cellW + 1, offY + l * cellH + 1, cellW - 1, cellH - 1);
+    }
+  }
+  // Axis labels
+  ctx.fillStyle = 'rgba(139,148,158,0.5)';
+  ctx.font = '7px monospace';
+  ctx.textAlign = 'center';
+  for (let e = 0; e < NE; e += 8) {
+    ctx.fillText(e, offX + e * cellW + cellW/2, offY - 1);
+  }
+  ctx.textAlign = 'right';
+  for (let l = 0; l < NL; l += 6) {
+    ctx.fillText('L'+l, offX - 1, offY + l * cellH + cellH/2 + 3);
+  }
+}
+
+let _heatAnim = null;
+function startHeatAnim() {
+  if (_heatAnim) return;
+  function loop() { drawHeatmap(); _heatAnim = requestAnimationFrame(loop); }
+  loop();
+}
+function stopHeatAnim() { if (_heatAnim) { cancelAnimationFrame(_heatAnim); _heatAnim = null; } }
+
 document.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); goToStep(activeStep + 1); }
   if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   { e.preventDefault(); goToStep(activeStep - 1); }
@@ -1139,6 +1388,129 @@ renderer.domElement.addEventListener('mouseleave', () => {
   hitDisc.visible = false; hitRing.visible = false;
   if (hovered) { hovered.material.uniforms.u_highlight.value = 0; hovered = null; hoveredIdx = -1; }
 });
+
+// ═══════════════════════════════════════════════════════════════
+// TOKEN DEMO ENGINE
+// ═══════════════════════════════════════════════════════════════
+// Real tokens from GPT-OSS 20B, seed=42, temp=0.7
+// "Write a long form camping story:"
+const DEMO_TOKENS = [
+  "\n\n","The","Stars"," Above"," Pine"," Creek","\n\n",
+  "The","summer"," I","'d","been"," waiting"," for"," arrived",
+  " in"," the"," form"," of"," a"," single"," text",
+  " from"," my"," old"," college"," friend"," Dev",":","\"",
+  "Pack"," your"," gear","."," Cedar"," Ridge",","," three"," days",","," no"," phones",".\""
+];
+// Simulated expert routing per token (deterministic pseudo-random, 4 of 32)
+// In a real trace these come from ffn_gate_inp scores
+const _demoRng = (() => { let s = 0x1a2b3c4d; return () => { s ^= s<<13; s ^= s>>17; s ^= s<<5; return (s>>>0)/2**32; }; })();
+const DEMO_ROUTING = DEMO_TOKENS.map((tok, ti) => {
+  // Scores for 32 experts (softmax-like, heavy tail)
+  const raw = Array.from({length:32}, (_, e) => {
+    const base = _demoRng() * 0.3;
+    const bump = (e === (ti*7+3)%32 || e === (ti*11+5)%32) ? _demoRng()*0.7+0.4 : 0;
+    return base + bump;
+  });
+  const maxR = Math.max(...raw);
+  const exp = raw.map(v => Math.exp(v - maxR));
+  const sumE = exp.reduce((a,b)=>a+b,0);
+  const scores = exp.map(v => v/sumE);
+  const sorted = scores.map((s,i)=>({s,i})).sort((a,b)=>b.s-a.s);
+  const top4 = new Set(sorted.slice(0,4).map(x=>x.i));
+  return { scores, top4 };
+});
+
+let _demoPlaying = false, _demoIdx = 0, _demoTimer = null;
+
+function drawRouterCanvas(routing) {
+  const cv = document.getElementById('routerCanvas');
+  if (!cv || !routing) return;
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  ctx.clearRect(0, 0, W, H);
+  const N = 32;
+  const barW = Math.floor(W / N) - 1;
+  const offX = Math.floor((W - N * (barW+1)) / 2);
+  const maxScore = Math.max(...routing.scores);
+  for (let e = 0; e < N; e++) {
+    const norm = routing.scores[e] / maxScore;
+    const barH = Math.max(2, Math.round(norm * (H - 20)));
+    const isTop = routing.top4.has(e);
+    ctx.fillStyle = isTop ? '#f0883e' : 'rgba(88,130,255,0.45)';
+    ctx.fillRect(offX + e*(barW+1), H - barH - 2, barW, barH);
+    if (isTop) {
+      ctx.fillStyle = 'rgba(240,136,62,0.2)';
+      ctx.fillRect(offX + e*(barW+1), 0, barW, H - barH - 2);
+    }
+  }
+  // Expert labels every 8
+  ctx.fillStyle = 'rgba(139,148,158,0.5)';
+  ctx.font = '7px monospace';
+  ctx.textAlign = 'center';
+  for (let e = 0; e < N; e += 8) ctx.fillText(e, offX + e*(barW+1) + barW/2, H - 1);
+  // Top-4 labels
+  ctx.fillStyle = '#f0883e';
+  ctx.font = '8px sans-serif';
+  [...routing.top4].sort((a,b)=>a-b).forEach((e, rank) => {
+    const norm = routing.scores[e] / maxScore;
+    const barH = Math.max(2, Math.round(norm * (H - 20)));
+    ctx.fillText('#'+e, offX + e*(barW+1) + barW/2, H - barH - 4);
+  });
+}
+
+function advanceTokenDemo() {
+  if (_demoIdx >= DEMO_TOKENS.length) { pauseTokenDemo(); return; }
+  const tok = DEMO_TOKENS[_demoIdx];
+  const routing = DEMO_ROUTING[_demoIdx];
+  // Append token to stream
+  const stream = document.getElementById('tokenStream');
+  if (stream) {
+    const span = document.createElement('span');
+    span.style.color = '#f778ba';
+    span.style.transition = 'color 0.8s';
+    span.textContent = tok;
+    stream.appendChild(span);
+    setTimeout(() => { span.style.color = 'var(--text)'; }, 300);
+    stream.scrollTop = stream.scrollHeight;
+  }
+  drawRouterCanvas(routing);
+  const info = document.getElementById('demoTokenInfo');
+  if (info) info.textContent = `tok ${_demoIdx+1}/${DEMO_TOKENS.length} · experts: ${[...routing.top4].sort((a,b)=>a-b).join(',')}`;
+  const status = document.getElementById('demoStatus');
+  if (status) status.textContent = `generating… (${_demoIdx+1}/${DEMO_TOKENS.length})`;
+  _demoIdx++;
+  _demoTimer = setTimeout(advanceTokenDemo, 340);
+}
+
+function pauseTokenDemo() {
+  _demoPlaying = false;
+  clearTimeout(_demoTimer);
+  const btn = document.getElementById('demoPlayBtn');
+  if (btn) btn.textContent = '▶ Play';
+  const status = document.getElementById('demoStatus');
+  if (status && _demoIdx >= DEMO_TOKENS.length) status.textContent = '✓ complete';
+}
+
+function toggleTokenDemo() {
+  if (_demoPlaying) { pauseTokenDemo(); return; }
+  _demoPlaying = true;
+  const btn = document.getElementById('demoPlayBtn');
+  if (btn) btn.textContent = '⏸ Pause';
+  advanceTokenDemo();
+}
+
+function resetTokenDemo() {
+  pauseTokenDemo();
+  _demoIdx = 0;
+  const stream = document.getElementById('tokenStream');
+  if (stream) stream.innerHTML = '<span style="color:var(--text2)">Write a long form camping story:</span>';
+  const cv = document.getElementById('routerCanvas');
+  if (cv) cv.getContext('2d').clearRect(0, 0, cv.width, cv.height);
+  const info = document.getElementById('demoTokenInfo');
+  if (info) info.textContent = '';
+  const status = document.getElementById('demoStatus');
+  if (status) status.textContent = 'press Play';
+}
 
 // ═══════════════════════════════════════════════════════════════
 // SECTION HIGHLIGHTING (camera pan + opacity)
