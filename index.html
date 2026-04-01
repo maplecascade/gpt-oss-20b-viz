@@ -75,6 +75,8 @@ header .right { margin-left: auto; font-size: 11px; color: var(--text2); }
 #tooltip3d .tt-title { font-weight: 700; color: var(--cyan); margin-bottom: 3px; }
 #tooltip3d .tt-dim { color: var(--gold); font-family: monospace; font-size: 10px; }
 .blk-label { color: rgba(255,255,255,0.7); font-size: 9px; font-family: 'Segoe UI', sans-serif; white-space: nowrap; pointer-events: none; text-shadow: 0 1px 4px rgba(0,0,0,0.9); letter-spacing: 0.3px; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+#rawCursor { animation: blink 0.9s step-end infinite; }
 .blk-label.dim { color: rgba(255,255,255,0.35); font-size: 8px; }
 .cell-info { position: absolute; bottom: 14px; right: 14px; z-index: 10; background: rgba(6,10,15,0.9); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 8px 12px; backdrop-filter: blur(6px); font-size: 10px; font-family: 'Cascadia Code', monospace; color: var(--gold); opacity: 0; transition: opacity 0.15s; pointer-events: none; }
 .cell-info.show { opacity: 1; }
@@ -392,23 +394,32 @@ next_token = argmax(softmax(logits[-1]))</div>
  body:`<p>Watch GPT-OSS 20B generate a camping story <span class="hl-b">token by token</span>.
  Each step shows the <span class="hl-o">4 experts selected</span> per layer and the routing scores.
  Token text is real output from the model (seed=42, temp=0.7).</p>
- <div style="display:flex;gap:8px;align-items:center;margin:10px 0">
+ <div style="margin-bottom:7px">
+   <div style="font-size:9px;color:var(--text2);margin-bottom:2px;letter-spacing:0.04em">INPUT CHARACTERS (raw prompt):</div>
+   <div id="rawInputBox" style="font-family:monospace;font-size:11px;background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.07);border-radius:4px;padding:4px 9px;min-height:22px;color:#aad8ff;letter-spacing:0.02em;word-break:break-all"><span id="rawInputText"></span><span id="rawCursor" style="color:#f778ba">▌</span></div>
+ </div>
+ <div style="display:flex;gap:8px;align-items:center;margin:6px 0">
    <button id="demoPlayBtn" onclick="toggleTokenDemo()"
      style="padding:5px 14px;border-radius:5px;background:rgba(247,120,186,0.15);border:1px solid rgba(247,120,186,0.35);color:#f778ba;font-size:11px;cursor:pointer;font-family:inherit">▶ Play</button>
    <button onclick="resetTokenDemo()"
      style="padding:5px 10px;border-radius:5px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.1);color:var(--text2);font-size:11px;cursor:pointer;font-family:inherit">⟳ Reset</button>
    <span id="demoStatus" style="font-size:10px;color:var(--text2);margin-left:4px">press Play</span>
  </div>
- <div style="display:flex;align-items:center;gap:8px;margin:0 0 8px;font-size:10px;color:var(--text2)">
+ <div style="display:flex;align-items:center;gap:8px;margin:0 0 5px;font-size:10px;color:var(--text2)">
    <span>Speed:</span>
-   <input id="demoSpeedSlider" type="range" min="60" max="900" value="340" step="40"
+   <input id="demoSpeedSlider" type="range" min="60" max="1400" value="340" step="40"
      style="flex:1;accent-color:#f778ba" oninput="_demoSpeedMs=+this.value;document.getElementById('demoSpeedVal').textContent=this.value+'ms'">
    <span id="demoSpeedVal" style="width:42px;text-align:right;color:#f778ba;font-family:monospace">340ms</span>
  </div>
- <div id="tokenStream" style="background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.07);border-radius:6px;padding:8px 10px;min-height:38px;max-height:108px;overflow-y:auto;font-family:monospace;font-size:12px;line-height:1.6;color:var(--text);margin-bottom:8px;word-break:break-all">
-   <span style="color:var(--text2)">Write a long form camping story:</span>
+ <div style="display:flex;align-items:center;gap:8px;margin:0 0 6px;font-size:9px;color:var(--text2)">
+   <span style="white-space:nowrap">Fwd pass:</span>
+   <div style="flex:1;height:5px;background:rgba(255,255,255,0.05);border-radius:3px;overflow:hidden">
+     <div id="layerSweepBar" style="height:100%;background:linear-gradient(90deg,#4d4dff,#f778ba);border-radius:3px;width:0;transition:width 0.07s linear"></div>
+   </div>
+   <span id="layerSweepLabel" style="width:28px;text-align:right;font-family:monospace;color:#f778ba">—</span>
  </div>
- <canvas id="routerCanvas" width="420" height="96" style="display:block;border-radius:5px;border:1px solid rgba(255,255,255,0.07)"></canvas>
+ <div id="tokenStream" style="background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.07);border-radius:6px;padding:8px 10px;min-height:38px;max-height:96px;overflow-y:auto;font-family:monospace;font-size:12px;line-height:1.6;color:var(--text);margin-bottom:8px;word-break:break-all"></div>
+ <canvas id="routerCanvas" width="420" height="88" style="display:block;border-radius:5px;border:1px solid rgba(255,255,255,0.07)"></canvas>
  <div style="font-size:9px;color:var(--text2);margin-top:4px;display:flex;gap:14px">
    <span><span style="color:#8080ff">▇</span> router score (all 32)</span>
    <span><span style="color:#f0883e">▇</span> top-4 selected</span>
@@ -1065,13 +1076,14 @@ const residualPath = [resEmbed.position.clone()];
 
 // ── SECTION: 24 TRANSFORMER LAYERS ──────────────────────────
 const DETAIL_LAYERS = new Set([0, 11, 23]);
+const demoLayers = []; // [{preAttnLn, attnRes, preMlpLn, router, expertMeshes:[{e,mesh}], moeOut}] or {collapsed}
 
 for (let i = 0; i < 24; i++) {
   const isDetail = DETAIL_LAYERS.has(i);
 
   if (isDetail) {
     // ── Pre-attention RMSNorm ──
-    mkBlock({
+    const _preAttnLn = mkBlock({
       cx: dT, cy: 1, cz: 1, x: lnX - dT * CELL * 0.5, y: y, z: 0,
       type: 'a',
       name: i === 0 ? 'RMSNorm' : '',
@@ -1202,11 +1214,11 @@ for (let i = 0; i < 24; i++) {
     y -= dC * CELL + margin;
 
     // ── Pre-MLP RMSNorm ──
-    mkBlock({
+    const _preMlpLn = mkBlock({
       cx: dT, cy: 1, cz: 1, x: lnX - dT * CELL * 0.5, y: y, z: 0,
-      type: 'a', name: '',
+      type: 'a', name: i === 0 ? 'Pre-MLP LN' : '',
       dimLabel: `Layer ${i} pre-MLP RMSNorm`,
-      sectionId: 'attention', small: true, opacity: 0.65
+      sectionId: 'attention', small: i !== 0, opacity: 0.65
     });
     y -= CELL + margin;
 
@@ -1225,11 +1237,12 @@ for (let i = 0; i < 24; i++) {
     // ── 32 Expert weight slabs (spread in Z) ──
     const expertY = y - dEFF * CELL * 0.5;
     const expertX = expertBaseX - dC * CELL * 0.5;
+    const _expertMeshes = [];
 
     for (let e = 0; e < NE; e++) {
       const ez = (e - (NE - 1) * 0.5) * NE_STEP;
       const isActive = e < AE; // top-4 shown as active
-      mkBlock({
+      const _em = mkBlock({
         cx: dC, cy: dEFF, cz: 3,
         x: expertX, y: expertY, z: ez,
         type: 'w',  // all experts are MXFP4 weight tensors
@@ -1241,6 +1254,7 @@ for (let i = 0; i < 24; i++) {
         opacity: isActive ? 0.88 : 0.07,
         small: e > 0 && e < AE - 1
       });
+      _expertMeshes.push({e, mesh: _em});
       // Arrow from router to active experts
       if (isActive) {
         mkFlowArrow(
@@ -1264,6 +1278,7 @@ for (let i = 0; i < 24; i++) {
     );
     mkFlowArrow(routerMesh.position.clone(), moeOut.position.clone(), 0xff6b35, 0.32);
     residualPath.push(moeOut.position.clone());
+    demoLayers[i] = { preAttnLn: _preAttnLn, attnRes, preMlpLn: _preMlpLn, router: routerMesh, expertMeshes: _expertMeshes, moeOut };
 
     y -= dEFF * CELL + margin * 3;
 
@@ -1271,7 +1286,7 @@ for (let i = 0; i < 24; i++) {
     // ── COLLAPSED LAYER ──
     const labelStr = (i === 1) ? 'Layers 1–10' : (i === 12) ? 'Layers 12–22' : '';
     if (i === 1 || i === 12) {
-      mkBlock({
+      const _collBlock = mkBlock({
         cx: dT, cy: dC, cz: 1, x: 0, y: y - dC * CELL * 0.5, z: 0,
         type: 'i',
         name: labelStr,
@@ -1279,6 +1294,8 @@ for (let i = 0; i < 24; i++) {
         sectionId: 'layers',
         opacity: 0.35
       });
+      demoLayers[i] = { collapsed: _collBlock };
+      residualPath.push(_collBlock.position.clone());
       y -= dC * CELL + margin * 0.6;
     } else {
       y -= margin * 0.4;
@@ -1286,9 +1303,14 @@ for (let i = 0; i < 24; i++) {
   }
 }
 
+// Fill per-layer animation refs for non-detail non-collapsed layers
+for (let _li = 0; _li < 24; _li++) {
+  if (!demoLayers[_li]) demoLayers[_li] = _li <= 10 ? (demoLayers[1] || {}) : (demoLayers[12] || {});
+}
+
 // ── SECTION: FINAL OUTPUT ────────────────────────────────────
 // Output RMSNorm
-mkBlock({
+const outNormMesh = mkBlock({
   cx: dT, cy: 1, cz: 1, x: lnX - dT * CELL * 0.5, y: y, z: 0,
   type: 'a', name: 'Output Norm',
   dimLabel: `output_norm.weight ∈ ℝ^2880\nfinal RMSNorm γ`,
@@ -1302,6 +1324,7 @@ const normFinal = mkBlock({
   type: 'i', name: 'Normed Final',
   dimLabel: `(${T}, 2880) normalized`, sectionId: 'output', opacity: 0.8
 });
+mkFlowArrow(outNormMesh.position.clone(), normFinal.position.clone(), 0x56d364, 0.45);
 y -= dC * CELL + margin;
 
 // Output weight (Q8_0, large matrix)
@@ -1716,6 +1739,110 @@ const DEMO_ROUTING = DEMO_TOKENS.map((tok, ti) => {
 });
 
 let _demoPlaying = false, _demoIdx = 0, _demoTimer = null, _demoChannel = '', _demoSpeedMs = 340;
+let _demoPhase = 0;   // 0=typing input chars, 1=generating tokens
+let _demoRawIdx = 0;  // chars typed so far
+let _demoFpTimers = [];  // scheduled flash timer IDs (cleared on pause/reset)
+const _RAW_INPUT = 'Write a long form camping story:';
+
+function clearFpTimers() {
+  _demoFpTimers.forEach(clearTimeout);
+  _demoFpTimers = [];
+}
+
+function updateLayerSweep(frac, label) {
+  const bar = document.getElementById('layerSweepBar');
+  const lbl = document.getElementById('layerSweepLabel');
+  if (bar) bar.style.width = Math.round(frac * 100) + '%';
+  if (lbl) lbl.textContent = label;
+}
+
+// Schedule a temporary highlight flash on a mesh
+function schedFlash(delayMs, mesh, intensity, durMs) {
+  if (!mesh) return;
+  _demoFpTimers.push(setTimeout(() => {
+    if (!_demoPlaying || !mesh.material) return;
+    mesh.material.uniforms.u_highlight.value = intensity;
+    _demoFpTimers.push(setTimeout(() => {
+      if (mesh.material && mesh.material.uniforms.u_highlight)
+        mesh.material.uniforms.u_highlight.value = 0;
+    }, durMs));
+  }, delayMs));
+}
+
+// Animate the whole forward pass through the 3D scene for one token
+function runForwardPass(tokIdx) {
+  clearFpTimers();
+  const total = _demoSpeedMs * 0.90;   // finish before next token fires
+  const nLayers = 24;
+  const nSlots  = 2 + nLayers + 2;    // embed, 24 layers, outNorm, logits
+  const slot    = total / nSlots;
+  const routing = DEMO_ROUTING[tokIdx];
+  let t = 0;
+
+  // ─ Tokenize / Embed ─────────────────────────────────────────
+  schedFlash(t, tokIds,   0.9,  slot * 1.1);
+  schedFlash(t, embW,     0.55, slot * 1.1);
+  schedFlash(t + slot * 0.5, resEmbed, 0.85, slot * 0.8);
+  _demoFpTimers.push(setTimeout(() => { if (_demoPlaying) updateLayerSweep(0, 'emb'); }, t));
+  t += slot;
+
+  // ─ 24 Layers ────────────────────────────────────────────────
+  for (let li = 0; li < nLayers; li++) {
+    const frac = (1 + li) / nSlots;
+    const lyr  = demoLayers[li];
+    const ft   = t;
+    _demoFpTimers.push(setTimeout(() => {
+      if (_demoPlaying) updateLayerSweep(frac, 'L' + li);
+    }, ft));
+
+    if (lyr) {
+      if (lyr.collapsed) {
+        // Non-detail layer: flash the single collapsed stack block
+        schedFlash(t, lyr.collapsed, 0.55, slot * 0.9);
+      } else {
+        // Detail layer: cascade through sub-components in the slot
+        const s = slot / 6;
+        if (lyr.preAttnLn) schedFlash(t,           lyr.preAttnLn, 0.75, s * 4);
+        if (lyr.attnRes)   schedFlash(t + s * 1.2, lyr.attnRes,   0.85, s * 4);
+        if (lyr.preMlpLn)  schedFlash(t + s * 2.4, lyr.preMlpLn,  0.75, s * 3.5);
+        if (lyr.router)    schedFlash(t + s * 3.2, lyr.router,     0.95, s * 2.5);
+        // Flash top-4 active experts brighter; others dim briefly
+        if (lyr.expertMeshes) {
+          lyr.expertMeshes.forEach(({e, mesh}) => {
+            if (routing.top4.has(e))
+              schedFlash(t + s * 4, mesh, 0.92, s * 2.2);
+          });
+        }
+        if (lyr.moeOut)    schedFlash(t + s * 5,   lyr.moeOut,    0.88, s * 1.2);
+      }
+    }
+    t += slot;
+  }
+
+  // ─ Output ────────────────────────────────────────────────────
+  _demoFpTimers.push(setTimeout(() => { if (_demoPlaying) updateLayerSweep(1, 'out'); }, t));
+  schedFlash(t,            outNormMesh, 0.80, slot * 1.4);
+  schedFlash(t + slot * 0.5, normFinal, 0.80, slot * 1.2);
+  t += slot;
+  schedFlash(t, logits, 0.95, slot * 1.8);
+  _demoFpTimers.push(setTimeout(() => { if (_demoPlaying) updateLayerSweep(0, '—'); }, t + slot * 2));
+}
+
+// Type the raw prompt character-by-character into rawInputBox
+function typeRawInput(callback) {
+  const rawBox = document.getElementById('rawInputText');
+  if (!rawBox) { callback(); return; }
+  const typeNext = () => {
+    if (!_demoPlaying) return;
+    rawBox.textContent = _RAW_INPUT.slice(0, ++_demoRawIdx);
+    if (_demoRawIdx < _RAW_INPUT.length) {
+      _demoTimer = setTimeout(typeNext, 36);
+    } else {
+      _demoTimer = setTimeout(callback, 300);
+    }
+  };
+  _demoTimer = setTimeout(typeNext, _demoRawIdx === 0 ? 60 : 0);
+}
 
 function drawRouterCanvas(routing) {
   const cv = document.getElementById('routerCanvas');
@@ -1787,17 +1914,20 @@ function advanceTokenDemo() {
     const phase = _demoChannel === 'analysis' ? '🧠 thinking…' : _demoChannel === 'final' ? '✍ writing…' : 'generating…';
     status.textContent = `${phase} (${_demoIdx+1}/${DEMO_TOKENS.length})`;
   }
+  const _fpIdx = _demoIdx;
   _demoIdx++;
+  runForwardPass(_fpIdx);
   _demoTimer = setTimeout(advanceTokenDemo, _demoSpeedMs);
 }
 
 function pauseTokenDemo() {
   _demoPlaying = false;
   clearTimeout(_demoTimer);
+  clearFpTimers();
   const btn = document.getElementById('demoPlayBtn');
   if (btn) btn.textContent = '▶ Play';
   const status = document.getElementById('demoStatus');
-  if (status && _demoIdx >= DEMO_TOKENS.length) status.textContent = '✓ complete';
+  if (status && _demoIdx >= DEMO_TOKENS.length && _demoPhase === 1) status.textContent = '✓ complete';
 }
 
 function toggleTokenDemo() {
@@ -1805,15 +1935,31 @@ function toggleTokenDemo() {
   _demoPlaying = true;
   const btn = document.getElementById('demoPlayBtn');
   if (btn) btn.textContent = '⏸ Pause';
-  advanceTokenDemo();
+  if (_demoPhase === 0) {
+    const status = document.getElementById('demoStatus');
+    if (status) status.textContent = 'typing input…';
+    typeRawInput(() => {
+      if (!_demoPlaying) return;
+      _demoPhase = 1;
+      advanceTokenDemo();
+    });
+  } else {
+    advanceTokenDemo();
+  }
 }
 
 function resetTokenDemo() {
   pauseTokenDemo();
   _demoIdx = 0;
+  _demoPhase = 0;
+  _demoRawIdx = 0;
   _demoChannel = '';
+  clearFpTimers();
+  const rawBox = document.getElementById('rawInputText');
+  if (rawBox) rawBox.textContent = '';
+  updateLayerSweep(0, '—');
   const stream = document.getElementById('tokenStream');
-  if (stream) stream.innerHTML = '<span style="color:var(--text2)">Write a long form camping story:</span>';
+  if (stream) stream.innerHTML = '';
   const cv = document.getElementById('routerCanvas');
   if (cv) cv.getContext('2d').clearRect(0, 0, cv.width, cv.height);
   const info = document.getElementById('demoTokenInfo');
