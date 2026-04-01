@@ -77,6 +77,7 @@ header .right { margin-left: auto; font-size: 11px; color: var(--text2); }
 .blk-label { color: rgba(255,255,255,0.7); font-size: 9px; font-family: 'Segoe UI', sans-serif; white-space: nowrap; pointer-events: none; text-shadow: 0 1px 4px rgba(0,0,0,0.9); letter-spacing: 0.3px; }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
 #rawCursor { animation: blink 0.9s step-end infinite; }
+.token-chip { background: rgba(247,120,186,0.14); border: 1px solid rgba(247,120,186,0.5); border-radius: 4px; padding: 2px 7px; font-family: monospace; font-size: 9px; color: #f778ba; white-space: nowrap; pointer-events: none; text-shadow: 0 0 8px rgba(247,120,186,0.4); letter-spacing: 0.3px; backdrop-filter: blur(4px); }
 .blk-label.dim { color: rgba(255,255,255,0.35); font-size: 8px; }
 .cell-info { position: absolute; bottom: 14px; right: 14px; z-index: 10; background: rgba(6,10,15,0.9); border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 8px 12px; backdrop-filter: blur(6px); font-size: 10px; font-family: 'Cascadia Code', monospace; color: var(--gold); opacity: 0; transition: opacity 0.15s; pointer-events: none; }
 .cell-info.show { opacity: 1; }
@@ -1358,6 +1359,45 @@ for (let _ri = 0; _ri < residualPath.length - 1; _ri++) {
 }
 y -= Math.min(40, dsc(VOCAB)) * CELL + margin * 4;
 
+// ── DEMO VISUALIZATION SCENE OBJECTS ───────────────────────
+// Embedding scanner plane: horizontal stripe that snaps to the looked-up row
+const _embScanW = embW.geometry.parameters.width;
+const _embScanH = embW.geometry.parameters.height;
+const embScan = new THREE.Mesh(
+  new THREE.PlaneGeometry(_embScanW, 0.32),
+  new THREE.MeshBasicMaterial({ color: 0x4dcc4d, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide })
+);
+embScan.position.set(embW.position.x, embW.position.y + _embScanH * 0.5, embW.position.z + 0.25);
+scene.add(embScan);
+const _EMBWH   = _embScanH;
+const _EMBWTOP = embW.position.y + _EMBWH * 0.5;
+// Prompt token chips: CSS2DObjects floating above Token IDs block
+const PROMPT_TOKENS = [
+  { text: 'Write',    id: 42156 },
+  { text: '\u00a0a',  id: 286   },
+  { text: '\u00a0camping', id: 16282 },
+  { text: '\u00a0story',   id: 1198  },
+  { text: ':',        id: 25    }
+];
+const tokenChips = [];
+PROMPT_TOKENS.forEach((pt, i) => {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'opacity:0;display:flex;flex-direction:column;align-items:center;transition:opacity 0.35s,transform 0.45s';
+  const chipEl = document.createElement('span');
+  chipEl.className = 'token-chip';
+  chipEl.textContent = pt.text;
+  const idEl = document.createElement('span');
+  idEl.style.cssText = 'font-family:monospace;font-size:7px;color:#aad8ff;margin-top:1px;opacity:0;transition:opacity 0.3s';
+  idEl.textContent = '#' + pt.id;
+  wrap.appendChild(chipEl);
+  wrap.appendChild(idEl);
+  const chipObj = new THREE.CSS2DObject(wrap);
+  const chipX = tokIds.position.x + (i - (PROMPT_TOKENS.length - 1) * 0.5) * 2.9;
+  chipObj.position.set(chipX, tokIds.position.y + 6, 0);
+  scene.add(chipObj);
+  tokenChips.push({ obj: chipObj, div: wrap, chipSpan: chipEl, idSpan: idEl });
+});
+
 // ── DATA FLOW PARTICLES ─────────────────────────────────────
 const modelTop = 260, modelBot = y - 10;
 const pCount = 250;
@@ -1742,7 +1782,7 @@ let _demoPlaying = false, _demoIdx = 0, _demoTimer = null, _demoChannel = '', _d
 let _demoPhase = 0;   // 0=typing input chars, 1=generating tokens
 let _demoRawIdx = 0;  // chars typed so far
 let _demoFpTimers = [];  // scheduled flash timer IDs (cleared on pause/reset)
-const _RAW_INPUT = 'Write a long form camping story:';
+const _RAW_INPUT = 'Write a camping story:';
 
 function clearFpTimers() {
   _demoFpTimers.forEach(clearTimeout);
@@ -1844,6 +1884,112 @@ function typeRawInput(callback) {
   _demoTimer = setTimeout(typeNext, _demoRawIdx === 0 ? 60 : 0);
 }
 
+// Camera tween helper: pan controls.target to a world position, respects pause
+function demoPanTo(targetPos, durMs) {
+  if (!_demoPlaying) return;
+  const _ptStart = controls.target.clone();
+  const _ptT0 = performance.now();
+  const _ptFn = now => {
+    if (!_demoPlaying) return;
+    const p = Math.min(1, (now - _ptT0) / durMs);
+    const e = p < 0.5 ? 2*p*p : -1 + (4-2*p)*p;
+    controls.target.lerpVectors(_ptStart, targetPos, e);
+    controls.update();
+    if (p < 1) requestAnimationFrame(_ptFn);
+  };
+  requestAnimationFrame(_ptFn);
+}
+
+// Hide all token chips and scanner; used on reset + pause clear
+function clearDemoChips() {
+  tokenChips.forEach(c => { c.div.style.opacity = '0'; c.div.style.transform = ''; c.idSpan.style.opacity = '0'; });
+  if (embScan && embScan.material) embScan.material.opacity = 0;
+}
+
+// Full encoding phase: tokenization → embedding lookup → residual ready
+// Animates token chips, embW scanner, camera pan; calls onDone() when finished
+function runEncodePhase(onDone) {
+  clearFpTimers();
+  const status = document.getElementById('demoStatus');
+  const CHIP_COLS = ['#f778ba', '#56d364', '#f0883e', '#aad8ff', '#e3b341'];
+  const T_STEP = 260;  // ms between successive token chip reveals
+
+  // Pan camera to the tokenize/embed area at the top of the model
+  demoPanTo(new THREE.Vector3(tokIds.position.x, tokIds.position.y, 0), 550);
+
+  let t = 20;
+  _demoFpTimers.push(setTimeout(() => { if (_demoPlaying && status) status.textContent = 'tokenizing…'; }, t));
+
+  // ─ Phase E1: reveal token chips one by one + color-code rawInputText ─
+  PROMPT_TOKENS.forEach((pt, i) => {
+    _demoFpTimers.push(setTimeout(() => {
+      if (!_demoPlaying) return;
+      tokenChips[i].div.style.opacity = '1';
+      // Color each identified token segment in the raw-input box
+      const rawEl = document.getElementById('rawInputText');
+      if (rawEl) {
+        rawEl.innerHTML = PROMPT_TOKENS.map((p2, j) =>
+          `<span style="color:${j <= i ? CHIP_COLS[j % CHIP_COLS.length] : 'rgba(170,216,255,0.35)'}">${
+            p2.text.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</span>`
+        ).join('');
+      }
+      schedFlash(0, tokIds, 0.7, 200);
+    }, t + i * T_STEP));
+    // Reveal token ID label slightly after the chip
+    _demoFpTimers.push(setTimeout(() => {
+      if (!_demoPlaying) return;
+      tokenChips[i].idSpan.style.opacity = '1';
+    }, t + i * T_STEP + 175));
+  });
+
+  t += PROMPT_TOKENS.length * T_STEP + 380;
+
+  // ─ Phase E2: embedding lookup ─ pan toward embW, scanner sweeps per token ─
+  _demoFpTimers.push(setTimeout(() => {
+    if (!_demoPlaying) return;
+    if (status) status.textContent = 'embedding lookup…';
+    // Pan camera so embW matrix is visible alongside Token IDs block
+    demoPanTo(new THREE.Vector3(
+      (tokIds.position.x + embW.position.x) * 0.38,
+      tokIds.position.y - 1, 0
+    ), 500);
+    schedFlash(70, tokIds, 0.95, 320);
+  }, t));
+  t += 260;
+
+  // For each token: snap scanner to that token's proportional row in embW
+  // (low token IDs = near top of matrix, which is accurate for BPE tokenizers)
+  PROMPT_TOKENS.forEach((pt, i) => {
+    _demoFpTimers.push(setTimeout(() => {
+      if (!_demoPlaying || !embScan.material) return;
+      const rowFrac = Math.min(0.93, pt.id / VOCAB);
+      embScan.position.y = _EMBWTOP - rowFrac * _EMBWH;
+      embScan.material.color.set(CHIP_COLS[i % CHIP_COLS.length]);
+      embScan.material.opacity = 0.80;
+      _demoFpTimers.push(setTimeout(() => { if (embScan.material) embScan.material.opacity = 0; }, 215));
+    }, t + i * 240));
+  });
+
+  t += PROMPT_TOKENS.length * 240 + 420;
+
+  // ─ Phase E3: residual stream filled ─ chips fade, resEmbed lights up ─
+  _demoFpTimers.push(setTimeout(() => {
+    if (!_demoPlaying) return;
+    if (status) status.textContent = 'embeddings ready…';
+    tokenChips.forEach(c => { c.div.style.opacity = '0'; });
+    schedFlash(0,   embW,     0.72, 480);
+    schedFlash(130, resEmbed, 0.95, 600);
+    // Pan back toward L0 to set up the viewer for the forward-pass sweep
+    const l0ref = (demoLayers[0] && demoLayers[0].attnRes)
+      ? demoLayers[0].attnRes.position.clone()
+      : new THREE.Vector3(0, tokIds.position.y - 18, 0);
+    demoPanTo(l0ref, 750);
+  }, t));
+  t += 950;
+
+  _demoFpTimers.push(setTimeout(() => { if (_demoPlaying) onDone(); }, t));
+}
+
 function drawRouterCanvas(routing) {
   const cv = document.getElementById('routerCanvas');
   if (!cv || !routing) return;
@@ -1927,7 +2073,7 @@ function pauseTokenDemo() {
   const btn = document.getElementById('demoPlayBtn');
   if (btn) btn.textContent = '▶ Play';
   const status = document.getElementById('demoStatus');
-  if (status && _demoIdx >= DEMO_TOKENS.length && _demoPhase === 1) status.textContent = '✓ complete';
+  if (status && _demoIdx >= DEMO_TOKENS.length && _demoPhase === 2) status.textContent = '✓ complete';
 }
 
 function toggleTokenDemo() {
@@ -1941,6 +2087,16 @@ function toggleTokenDemo() {
     typeRawInput(() => {
       if (!_demoPlaying) return;
       _demoPhase = 1;
+      runEncodePhase(() => {
+        if (!_demoPlaying) return;
+        _demoPhase = 2;
+        advanceTokenDemo();
+      });
+    });
+  } else if (_demoPhase === 1) {
+    runEncodePhase(() => {
+      if (!_demoPlaying) return;
+      _demoPhase = 2;
       advanceTokenDemo();
     });
   } else {
@@ -1955,6 +2111,7 @@ function resetTokenDemo() {
   _demoRawIdx = 0;
   _demoChannel = '';
   clearFpTimers();
+  clearDemoChips();
   const rawBox = document.getElementById('rawInputText');
   if (rawBox) rawBox.textContent = '';
   updateLayerSweep(0, '—');
