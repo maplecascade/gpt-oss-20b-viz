@@ -1092,7 +1092,7 @@ for (let i = 0; i < 24; i++) {
       dimLabel: `(${T}, 2880) normalized`, sectionId: 'attention', opacity: 0.78
     });
 
-    // Q weight — wide (2880×8192)
+    // Q weight (2,880 × 4,096) — portrait block, taller than wide since DQ > C
     const qW = mkBlock({
       cx: dC, cy: dDQ, cz: 1,
       x: wX - dC * CELL * 0.5 - margin,
@@ -1137,19 +1137,39 @@ for (let i = 0; i < 24; i++) {
     });
 
     // QKV combined activation
-    const qkvA = mkBlock({
-      cx: dT, cy: dsc(DQ + DKV * 2), cz: 1,
-      x: lnX - dT * CELL * 0.5 - margin * 2 - dT * CELL,
-      y: y - dsc(DQ + DKV * 2) * CELL * 0.5, z: 0,
-      type: 'i', name: i === 0 ? 'Q,K,V' : '',
-      dimLabel: `Q(${T}×4096) + K,V(${T}×512)`,
+    // Separate Q, K, V activation strips — z-layered to mirror the weight planes
+    const qkvX = lnX - dT * CELL * 0.5 - margin * 2 - dT * CELL;
+    const qA = mkBlock({
+      cx: dT, cy: dDQ, cz: 1,
+      x: qkvX, y: y - dDQ * CELL * 0.5, z: 0,
+      type: 'i', name: i === 0 ? 'Q' : '',
+      dimLabel: `Q (${T}×4096)\n64 heads × 64-d`,
       sectionId: 'attention', opacity: 0.72
     });
+    const kA = mkBlock({
+      cx: dT, cy: dDKV, cz: 1,
+      x: qkvX, y: y - dDKV * CELL * 0.5, z: -(dC * CELL + margin),
+      type: 'i', name: i === 0 ? 'K' : '',
+      dimLabel: `K (${T}×512)\n8 heads × 64-d`,
+      sectionId: 'attention', opacity: 0.65
+    });
+    mkBlock({
+      cx: dT, cy: dDKV, cz: 1,
+      x: qkvX, y: y - dDKV * CELL * 0.5, z: -2 * (dC * CELL + margin),
+      type: 'i', name: i === 0 ? 'V' : '',
+      dimLabel: `V (${T}×512)\n8 heads × 64-d`,
+      sectionId: 'attention', opacity: 0.65
+    });
+    // Layer 0: show projection arrows LN → Q/K activations
+    if (i === 0) {
+      mkFlowArrow(lnOut.position.clone(), qA.position.clone(), 0x4d4dff, 0.42);
+      mkFlowArrow(lnOut.position.clone(), kA.position.clone(), 0x6080ff, 0.28);
+    }
 
     y -= Math.max(dDQ, dDKV) * CELL + margin;
 
-    // Output projection weight (8192×2880)
-    mkBlock({
+    // Output projection weight (4,096×2,880) — landscape block since DQ > C
+    const wO = mkBlock({
       cx: dDQ, cy: dC, cz: 1,
       x: wX - dDQ * CELL * 0.5 - margin,
       y: y - dC * CELL * 0.5, z: 0,
@@ -1158,12 +1178,16 @@ for (let i = 0; i < 24; i++) {
       sectionId: 'attention', opacity: 0.82
     });
 
-    // Attention output
+    // Attention output (T×C after W_O)
     const attnOut = mkBlock({
       cx: dT, cy: dC, cz: 1, x: lnX - dT * CELL * 0.5, y: y - dC * CELL * 0.5, z: 0,
       type: 'i', name: i === 0 ? 'Attn Out' : '',
       dimLabel: `(${T}, 2880) after W_O`, sectionId: 'attention', opacity: 0.78
     });
+    // Layer 0: show W_O → attnOut projection arrow
+    if (i === 0) {
+      mkFlowArrow(wO.position.clone(), attnOut.position.clone(), 0x56d364, 0.45);
+    }
 
     // Attn residual (main stream)
     const attnRes = mkBlock({
