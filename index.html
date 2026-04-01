@@ -1918,11 +1918,14 @@ let _demoPlaying = false, _demoIdx = 0, _demoTimer = null, _demoChannel = '', _d
 let _demoPhase = 0;   // 0=typing input chars, 1=generating tokens
 let _demoRawIdx = 0;  // chars typed so far
 let _demoFpTimers = [];  // scheduled flash timer IDs (cleared on pause/reset)
+let _litMeshes   = [];  // meshes currently highlighted (reset to 0 on clear)
 const _RAW_INPUT = 'Write a camping story:';
 
 function clearFpTimers() {
   _demoFpTimers.forEach(clearTimeout);
   _demoFpTimers = [];
+  _litMeshes.forEach(m => { if (m.material && m.material.uniforms.u_highlight) m.material.uniforms.u_highlight.value = 0; });
+  _litMeshes = [];
 }
 
 function updateLayerSweep(frac, label) {
@@ -1932,16 +1935,13 @@ function updateLayerSweep(frac, label) {
   if (lbl) lbl.textContent = label;
 }
 
-// Schedule a temporary highlight flash on a mesh
-function schedFlash(delayMs, mesh, intensity, durMs) {
+// Highlight a mesh at delayMs and keep it lit until the demo resets
+function schedFlash(delayMs, mesh, intensity) {
   if (!mesh) return;
   _demoFpTimers.push(setTimeout(() => {
     if (!_demoPlaying || !mesh.material) return;
     mesh.material.uniforms.u_highlight.value = intensity;
-    _demoFpTimers.push(setTimeout(() => {
-      if (mesh.material && mesh.material.uniforms.u_highlight)
-        mesh.material.uniforms.u_highlight.value = 0;
-    }, durMs));
+    _litMeshes.push(mesh);
   }, delayMs));
 }
 
@@ -1956,9 +1956,9 @@ function runForwardPass(tokIdx) {
   let t = 0;
 
   // ─ Tokenize / Embed ─────────────────────────────────────────
-  schedFlash(t, tokIds,   0.9,  slot * 1.8);
-  schedFlash(t, embW,     0.55, slot * 1.8);
-  schedFlash(t + slot * 0.5, resEmbed, 0.85, slot * 1.4);
+  schedFlash(t, tokIds,   0.9);
+  schedFlash(t, embW,     0.55);
+  schedFlash(t + slot * 0.5, resEmbed, 0.85);
   _demoFpTimers.push(setTimeout(() => { if (_demoPlaying) updateLayerSweep(0, 'emb'); }, t));
   t += slot;
 
@@ -1974,22 +1974,22 @@ function runForwardPass(tokIdx) {
     if (lyr) {
       if (lyr.collapsed) {
         // Non-detail layer: flash the single collapsed stack block
-        schedFlash(t, lyr.collapsed, 0.55, slot * 1.6);
+        schedFlash(t, lyr.collapsed, 0.55);
       } else {
         // Detail layer: cascade through sub-components in the slot
         const s = slot / 6;
-        if (lyr.preAttnLn) schedFlash(t,           lyr.preAttnLn, 0.75, s * 6);
-        if (lyr.attnRes)   schedFlash(t + s * 1.2, lyr.attnRes,   0.85, s * 6);
-        if (lyr.preMlpLn)  schedFlash(t + s * 2.4, lyr.preMlpLn,  0.75, s * 5);
-        if (lyr.router)    schedFlash(t + s * 3.2, lyr.router,     0.95, s * 4);
+        if (lyr.preAttnLn) schedFlash(t,           lyr.preAttnLn, 0.75);
+        if (lyr.attnRes)   schedFlash(t + s * 1.2, lyr.attnRes,   0.85);
+        if (lyr.preMlpLn)  schedFlash(t + s * 2.4, lyr.preMlpLn,  0.75);
+        if (lyr.router)    schedFlash(t + s * 3.2, lyr.router,     0.95);
         // Flash top-4 active experts brighter; others dim briefly
         if (lyr.expertMeshes) {
           lyr.expertMeshes.forEach(({e, mesh}) => {
             if (routing.top4.has(e))
-              schedFlash(t + s * 4, mesh, 0.92, s * 3.5);
+              schedFlash(t + s * 4, mesh, 0.92);
           });
         }
-        if (lyr.moeOut)    schedFlash(t + s * 5,   lyr.moeOut,    0.88, s * 2.5);
+        if (lyr.moeOut)    schedFlash(t + s * 5,   lyr.moeOut,    0.88);
       }
     }
     t += slot;
@@ -1997,10 +1997,10 @@ function runForwardPass(tokIdx) {
 
   // ─ Output ────────────────────────────────────────────────────
   _demoFpTimers.push(setTimeout(() => { if (_demoPlaying) updateLayerSweep(1, 'out'); }, t));
-  schedFlash(t,            outNormMesh, 0.80, slot * 2.2);
-  schedFlash(t + slot * 0.5, normFinal, 0.80, slot * 2.0);
+  schedFlash(t,            outNormMesh, 0.80);
+  schedFlash(t + slot * 0.5, normFinal, 0.80);
   t += slot;
-  schedFlash(t, logits, 0.95, slot * 2.8);
+  schedFlash(t, logits, 0.95);
   _demoFpTimers.push(setTimeout(() => { if (_demoPlaying) updateLayerSweep(0, '—'); }, t + slot * 2));
 }
 
