@@ -73,7 +73,7 @@ header .right { margin-left: auto; font-size: 11px; color: var(--text2); }
 #tooltip3d { position: fixed; z-index: 200; pointer-events: none; background: rgba(7,9,14,0.97); border: 1px solid rgba(88,166,255,0.18); border-radius: 8px; padding: 10px 14px; max-width: 340px; font-size: 11px; line-height: 1.5; color: var(--text); box-shadow: 0 8px 32px rgba(0,0,0,0.65); backdrop-filter: blur(10px); opacity: 0; transition: opacity 0.1s; }
 #tooltip3d.show { opacity: 1; }
 #tooltip3d .tt-title { font-weight: 700; color: var(--cyan); font-size: 12px; margin-bottom: 5px; display:flex; align-items:center; gap:6px; }
-#tooltip3d .tt-formula { font-family: 'Cascadia Code','Consolas',monospace; font-size: 10.5px; color: #c9b0ff; background: rgba(130,80,230,0.10); border: 1px solid rgba(130,80,230,0.22); border-radius: 4px; padding: 4px 9px; margin: 0 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#tooltip3d .tt-formula { font-size: 12px; color: #c9b0ff; background: rgba(130,80,230,0.10); border: 1px solid rgba(130,80,230,0.22); border-radius: 4px; padding: 6px 10px; margin: 0 0 6px; overflow: hidden; line-height: 1.7; }
 #tooltip3d .tt-shapes { display:flex; flex-wrap:wrap; gap:3px; align-items:center; margin: 0 0 6px; }
 .tt-shape-pill { display:inline-flex; flex-direction:column; align-items:center; padding:2px 6px; border-radius:4px; border:1px solid; font-size:8px; font-family:'Cascadia Code','Consolas',monospace; line-height:1.35; }
 .tt-shape-pill b { font-size:9px; }
@@ -140,6 +140,8 @@ header .right { margin-left: auto; font-size: 11px; color: var(--text2); }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS2DRenderer.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css" crossorigin="anonymous">
+  <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js" crossorigin="anonymous"></script>
 <script>
 // ═══════════════════════════════════════════════════════════════
 // WALKTHROUGH STEPS
@@ -1366,9 +1368,51 @@ mkFlowArrow(
 residualPath.push(logits.position.clone());
 // Draw main residual spine
 for (let _ri = 0; _ri < residualPath.length - 1; _ri++) {
-  mkFlowArrow(residualPath[_ri], residualPath[_ri + 1], 0x44aaff, 0.42);
+  mkFlowArrow(residualPath[_ri], residualPath[_ri + 1], 0x44aaff, 0.62);
 }
 y -= Math.min(40, dsc(VOCAB)) * CELL + margin * 4;
+
+// ── LOGITS SOFTMAX FAN ──────────────────────────────────────────────────────
+{
+  const lsH = Math.min(40, dsc(VOCAB));
+  let fy = logits.position.y - lsH * CELL * 0.5 - margin * 2;
+  const smAggH = 4;
+  const smAgg = mkBlock({
+    cx: dT + 8, cy: smAggH, cz: 1,
+    x: 0, y: fy - smAggH * CELL * 0.5, z: 0,
+    type: 'a', name: 'SM Agg',
+    dimLabel: 'Z = \u03a3 exp(\u2113\u1d62 \u2212 max \u2113)\nnumerical stabilisation',
+    sectionId: 'output', opacity: 0.90
+  });
+  mkFlowArrow(logits.position.clone(), smAgg.position.clone(), 0xe3b341, 0.78);
+  fy -= smAggH * CELL + margin * 2;
+  const logitsSoftmax = mkBlock({
+    cx: dT, cy: lsH, cz: 1,
+    x: 0, y: fy - lsH * CELL * 0.5, z: 0,
+    type: 'i', name: 'Logits Softmax',
+    dimLabel: `softmax(logits/0.7)\n(${T}, 201,088) probabilities`,
+    sectionId: 'output', opacity: 0.75
+  });
+  mkFlowArrow(smAgg.position.clone(), logitsSoftmax.position.clone(), 0xe3b341, 0.78);
+  fy -= lsH * CELL + margin * 3.5;
+  // Diagonal fan lines to representative next-token candidate boxes
+  const FAN_TOKENS = ['once','upon','a','time','In','There','Long','Camp','The','A','\u2022','On'];
+  const nFan = FAN_TOKENS.length;
+  const fanSpread = 32;
+  const fanLineMat = new THREE.LineBasicMaterial({ color: 0x56d364, transparent: true, opacity: 0.38, depthWrite: false });
+  FAN_TOKENS.forEach((tok, i) => {
+    const fx = (i / (nFan - 1) - 0.5) * fanSpread;
+    const fb = mkBlock({
+      cx: 3, cy: 4, cz: 1,
+      x: fx, y: fy - 2 * CELL, z: 0,
+      type: 'i', name: tok,
+      dimLabel: `token: "${tok}"`,
+      sectionId: 'output', opacity: 0.60
+    });
+    const pts = [logitsSoftmax.position.clone(), new THREE.Vector3(fx, fy - 2 * CELL, 0)];
+    scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), fanLineMat));
+  });
+}
 
 // ── DEMO VISUALIZATION SCENE OBJECTS ───────────────────────
 // Embedding scanner plane: horizontal stripe that snaps to the looked-up row
@@ -1454,7 +1498,7 @@ const arcGroup = new THREE.Group(); scene.add(arcGroup);
 let arcTargetSet = new Set();
 
 function mkFlowArrow(from, to, colHex, opac) {
-  opac = opac ?? 0.60;
+  opac = opac ?? 0.70;
   const col3 = new THREE.Color(colHex ?? 0x56d364);
   // Bezier path — bow sideways for vertical connections, upward for horizontal
   const mid = new THREE.Vector3().lerpVectors(from, to, 0.5);
@@ -1488,11 +1532,11 @@ function mkFlowArrow(from, to, colHex, opac) {
     transparent: true, depthWrite: false
   });
   flowArrowMats.push(tubeMat);
-  const tubeGeo = new THREE.TubeGeometry(curve, 28, 0.13, 6, false);
+  const tubeGeo = new THREE.TubeGeometry(curve, 32, 0.25, 8, false);
   flowGroup.add(new THREE.Mesh(tubeGeo, tubeMat));
   // Cone arrowhead pointing along tangent at destination
   const tangent = curve.getTangent(1.0).normalize();
-  const coneGeo = new THREE.ConeGeometry(0.26, 0.60, 8);
+  const coneGeo = new THREE.ConeGeometry(0.42, 0.95, 8);
   const coneMat = new THREE.MeshBasicMaterial({ color: col3, transparent: true, opacity: Math.min(1, opac * 1.25) });
   const cone = new THREE.Mesh(coneGeo, coneMat);
   cone.position.copy(to);
@@ -1503,7 +1547,7 @@ function mkFlowArrow(from, to, colHex, opac) {
     color: col3.clone().lerp(new THREE.Color(1,1,1), 0.55),
     transparent: true, opacity: 0.9
   });
-  const dot = new THREE.Mesh(new THREE.SphereGeometry(0.19, 8, 8), dotMat);
+  const dot = new THREE.Mesh(new THREE.SphereGeometry(0.26, 8, 8), dotMat);
   dot.userData._curve = curve;
   dot.userData._speed = 0.48 + Math.random() * 0.28;
   dot.userData._phase = Math.random();
@@ -1591,6 +1635,38 @@ function clearHoverCell() {
 // ═══════════════════════════════════════════════════════════════
 // MATH TOOLTIP DATA  (bbycroft-style: formula + shape pills + note)
 // ═══════════════════════════════════════════════════════════════
+const LATEX_OPS = {
+  'Token IDs':          '\\text{ids} = \\text{tokenize}(\\text{text})',
+  'Token Embed':        'x_0 = E[\\text{ids},:]',
+  'Input Embed':        'x_0 = E[\\text{ids}]',
+  '\u03b3':             '\\gamma \\in \\mathbb{R}^{2880}',
+  'RMSNorm':            '\\hat{x} = \\gamma \\odot x \\,/\\, \\text{RMS}(x)',
+  'Normed x':           '\\hat{x} = \\gamma \\odot x \\,/\\, \\text{RMS}(x)',
+  'W_Q':                'Q = \\hat{x} \\cdot W_Q',
+  'W_K':                'K = \\hat{x} \\cdot W_K',
+  'W_V':                'V = \\hat{x} \\cdot W_V',
+  'Q':                  'Q = \\text{RoPE}(\\hat{x} \\cdot W_Q)',
+  'K':                  'K = \\text{RoPE}(\\hat{x} \\cdot W_K)',
+  'V':                  'V = \\hat{x} \\cdot W_V',
+  'W_O':                'a = [h_1 \\cdots h_{64}] \\cdot W_O',
+  'Attn Out':           'x \\leftarrow x + a',
+  'Sinks':              '\\text{attn}\\mathrel{+}=\\text{softmax}(qk_{\\text{sink}}^\\top\\!/\\sqrt{64})\\,v_{\\text{sink}}',
+  'Pre-MLP LN':         '\\hat{x}_2 = \\gamma_2 \\odot x^{\\prime} / \\text{RMS}(x^{\\prime})',
+  'Router Gate':        's = \\text{softmax}(\\hat{x}_2 W_{\\text{gate}}),\\;\\text{top-4}',
+  'Expert 0 \u2713':    'h = \\text{SiLU}(\\hat{x}_2 W_g)\\odot(\\hat{x}_2 W_{\\text{up}});\\; o = W_{\\downarrow} h',
+  '__moeActive':        'o = w\\,W_{\\downarrow}[\\text{SiLU}(\\hat{x}_2 W_g)\\odot \\hat{x}_2 W_{\\text{up}}]',
+  '__moeInactive':      'w = 0,\\;\\text{zero compute}',
+  '__attnRes':          'x^{\\prime} = x + \\text{Attn}(\\text{RMSNorm}(x))',
+  '__moeRes':           'x^{\\prime\\prime} = x^{\\prime} + \\text{MoE}(\\text{RMSNorm}(x^{\\prime}))',
+  'Layers 1\u201310':   '\\times 10\\;\\text{attn + MoE layers}',
+  'Layers 12\u201322':  '\\times 11\\;\\text{attn + MoE layers}',
+  'Output Norm':        '\\hat{x}_f = \\gamma_{\\text{out}} \\odot x_{L_{23}} / \\text{RMS}(x_{L_{23}})',
+  'Normed Final':       '\\hat{x}_f = \\gamma_{\\text{out}} \\odot x_{L_{23}} / \\text{RMS}(x_{L_{23}})',
+  'Output W (LM Head)': '\\text{logits} = \\hat{x}_f \\cdot E^{\\top}',
+  'Logits':             'p = \\text{top-}p_{0.9}(\\text{softmax}(\\ell/0.7))',
+  'SM Agg':             'Z = \\sum_i \\exp(\\ell_i - \\max_j \\ell_j)',
+  'Logits Softmax':     'p_i = \\exp(\\ell_i/T)\\,/\\,Z,\\quad T{=}0.7',
+};
 const MATH_INFO = {
   'Token IDs':{
     op:'ids = tokenize(text)',
@@ -1703,7 +1779,15 @@ const MATH_INFO = {
   'Logits':{
     op:'p = top-p\u2090\u208c\u2080\u2089( softmax(logits / 0.7) )',
     io:[{l:'logits',s:'(T,201088)',c:'#4dcc4d'},{l:'\u2192'},{l:'next_id',s:'(scalar) sampled',c:'#e3b341'}],
-    note:'Temp 0.7 sharpens distribution; nucleus (p=0.9) keeps only the minimal token set summing to 90% probability; sample drawn from the kept set'}
+    note:'Temp 0.7 sharpens distribution; nucleus (p=0.9) keeps only the minimal token set summing to 90% probability; sample drawn from the kept set'},
+  'SM Agg':{
+    op:'Z = \u03a3 exp(\u2113\u1d62 \u2212 max \u2113)',
+    io:[{l:'logits',s:'(T,201088)',c:'#4dcc4d'},{l:'\u2192'},{l:'Z',s:'(scalar)',c:'#e3b341'}],
+    note:'Numerically stable softmax denominator; subtracting max logit before exp prevents float overflow for large vocab'},
+  'Logits Softmax':{
+    op:'p\u1d62 = exp(\u2113\u1d62/T) / Z',
+    io:[{l:'logits',s:'(T,201088)',c:'#4dcc4d'},{l:'\u2192'},{l:'p',s:'(T,201088)',c:'#e3b341'}],
+    note:'Temperature T=0.7 sharpens the distribution; nucleus p=0.9 trims the long tail before sampling'}
 };
 function _mkShapePill(item) {
   if (!item.s) return `<span class="tt-arrow">${item.l}</span>`;
@@ -1714,17 +1798,22 @@ function _mkShapePill(item) {
 function buildTooltipHTML(block, cx, cy) {
   const lbl = block.userData.label;
   let mi = MATH_INFO[lbl];
+  let miKey = lbl;
   if (!mi) {
-    if (lbl && /^L\d+ attn\+res$/.test(lbl))  mi = MATH_INFO['__attnRes'];
-    else if (lbl && /^L\d+ MoE\+res$/.test(lbl)) mi = MATH_INFO['__moeRes'];
-    else if (lbl && /\u2713/.test(lbl)) mi = MATH_INFO['__moeActive'];
-    else if (lbl && /\u2026/.test(lbl)) mi = MATH_INFO['__moeInactive'];
+    if (lbl && /^L\d+ attn\+res$/.test(lbl))       { mi = MATH_INFO['__attnRes'];     miKey = '__attnRes'; }
+    else if (lbl && /^L\d+ MoE\+res$/.test(lbl))   { mi = MATH_INFO['__moeRes'];      miKey = '__moeRes'; }
+    else if (lbl && /\u2713/.test(lbl))             { mi = MATH_INFO['__moeActive'];   miKey = '__moeActive'; }
+    else if (lbl && /\u2026/.test(lbl))             { mi = MATH_INFO['__moeInactive']; miKey = '__moeInactive'; }
   }
   const qi = getQuantInfo(lbl);
   const qBadge = qi ? `<span style="padding:1px 5px;border-radius:3px;background:${qi.color}22;color:${qi.color};border:1px solid ${qi.color}55;font-size:8px;font-weight:700">${qi.fmt}</span>` : '';
   let html = '';
   if (mi) {
-    html += `<div class="tt-formula">${mi.op}</div>`;
+    const latexStr = LATEX_OPS[miKey];
+    const formulaHtml = (latexStr && typeof katex !== 'undefined')
+      ? katex.renderToString(latexStr, {throwOnError: false, displayMode: false})
+      : `<span>${mi.op}</span>`;
+    html += `<div class="tt-formula">${formulaHtml}</div>`;
     html += `<div class="tt-shapes">${mi.io.map(_mkShapePill).join('')}</div>`;
     if (mi.note) html += `<div class="tt-note">${mi.note}</div>`;
   } else {
