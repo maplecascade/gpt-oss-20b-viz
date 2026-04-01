@@ -90,7 +90,7 @@ header .right { margin-left: auto; font-size: 11px; color: var(--text2); }
   <h1>GPT-OSS <b>20B MoE</b> Visualization</h1>
   <span class="tag">20B · MXFP4 · 131K ctx</span>
   <span class="tag2">32 experts · top-4</span>
-  <span class="right">Orbit: drag | Zoom: scroll | Pan: right-drag | ← → steps</span>
+  <span class="right">Orbit: drag | Zoom: scroll or +/− | Pan: right-drag | ← → steps</span>
 </header>
 <div id="app">
   <div id="panel">
@@ -752,6 +752,8 @@ function stopHeatAnim() { if (_heatAnim) { cancelAnimationFrame(_heatAnim); _hea
 document.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); goToStep(activeStep + 1); }
   if (e.key === 'ArrowLeft'  || e.key === 'ArrowUp')   { e.preventDefault(); goToStep(activeStep - 1); }
+  if (e.key === '+' || e.key === '=') { e.preventDefault(); controls.dollyIn  ? controls.dollyIn(1.15)  : (camera.position.sub(controls.target).multiplyScalar(1/1.15).add(controls.target)); controls.update(); }
+  if (e.key === '-' || e.key === '_') { e.preventDefault(); controls.dollyOut ? controls.dollyOut(1.15) : (camera.position.sub(controls.target).multiplyScalar(1.15).add(controls.target));  controls.update(); }
 });
 
 // ═══════════════════════════════════════════════════════════════
