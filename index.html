@@ -186,8 +186,8 @@ const STEPS = [
  <tr><td>Tokenizer Type</td><td>BPE (tiktoken-style)</td></tr>
  <tr><td>Pre-tokenizer</td><td>gpt-4o</td></tr>
  <tr><td>Vocabulary Size</td><td>201,088 tokens</td></tr>
- <tr><td>BOS Token</td><td>ID 200,016</td></tr>
- <tr><td>EOS Token</td><td>ID 200,017</td></tr>
+ <tr><td>BOS Token</td><td>ID 199,998</td></tr>
+ <tr><td>EOS Token</td><td>ID 200,002</td></tr>
  <tr><td>Byte Fallback</td><td>Yes (256 byte tokens)</td></tr>
  </table>
  <p>GPT-OSS uses a <span class="hl-b">structured reasoning template</span> that exposes chain-of-thought via named channel tokens. The model reasons internally in an <span class="hl-o">analysis</span> channel — invisible to the user — before the final answer appears in <span class="hl-g">final</span>. This is reflected in the Token Flow Demo on step 9:</p>
@@ -223,27 +223,26 @@ h₀ = E  ∈ ℝ<sup>T × 2880</sup>  (residual stream)</div>
  <span class="hl-g">8:1 ratio</span> (64 Q heads share 8 KV heads). Combined with a
  <span class="hl-o">sliding window</span> of 128 tokens, this dramatically reduces compute
  and KV-cache size.</p>
- <div class="formula-block">Q = x · W_Q  ∈ ℝ<sup>T × 64 × 128</sup>  (64 heads, dim 128)
-K = x · W_K  ∈ ℝ<sup>T × 8 × 128</sup>   (8 KV heads, shared)
-V = x · W_V  ∈ ℝ<sup>T × 8 × 128</sup>
+ <div class="formula-block">Q = x · W_Q  ∈ ℝ<sup>T × 64 × 64</sup>  (64 heads, dim 64)
+K = x · W_K  ∈ ℝ<sup>T × 8 × 64</sup>   (8 KV heads, shared)
+V = x · W_V  ∈ ℝ<sup>T × 8 × 64</sup>
 
-Attn(q,k,v) = softmax(q·kᵀ/√128) · v  [window 128]
+Attn(q,k,v) = softmax(q·kᵀ/√64) · v  [window 128]
 y = Concat(heads) · W_O  ∈ ℝ<sup>T × 2880</sup></div>
- <p>The <span class="hl-o">attention sinks</span> (<code>attn_sinks.weight</code>, 1 sink
- per KV head × 128-d) are fixed anchor tokens that every position can attend to regardless
+ <p>The <span class="hl-o">attention sinks</span> (<code>attn_sinks.weight</code>, 64-dim sink embedding, 1 per layer) are fixed anchor tokens that every position can attend to regardless
  of window position — preventing the "lost tokens" problem in long contexts.</p>
  <table class="spec-table"><tr><th>Tensor</th><th>Shape</th><th>Params</th></tr>
- <tr><td>W_Q</td><td>2,880 × 8,192</td><td>~23.6M · MXFP4</td></tr>
- <tr><td>W_K</td><td>2,880 × 1,024</td><td>~2.95M · MXFP4</td></tr>
- <tr><td>W_V</td><td>2,880 × 1,024</td><td>~2.95M · MXFP4</td></tr>
- <tr><td>W_O</td><td>8,192 × 2,880</td><td>~23.6M · MXFP4</td></tr>
- <tr><td>attn_sinks</td><td>8 × 128</td><td>1,024 params</td></tr>
- <tr><td>RoPE dims / head</td><td>64 of 128</td><td>θ=150,000</td></tr>
+ <tr><td>W_Q</td><td>2,880 × 4,096</td><td>~11.8M · MXFP4</td></tr>
+ <tr><td>W_K</td><td>2,880 × 512</td><td>~1.47M · MXFP4</td></tr>
+ <tr><td>W_V</td><td>2,880 × 512</td><td>~1.47M · MXFP4</td></tr>
+ <tr><td>W_O</td><td>4,096 × 2,880</td><td>~11.8M · MXFP4</td></tr>
+ <tr><td>attn_sinks</td><td>[64]</td><td>64 params</td></tr>
+ <tr><td>RoPE dims / head</td><td>64 of 64 (all)</td><td>θ=150,000</td></tr>
  <tr><td>GQA ratio</td><td>64Q / 8KV</td><td>8:1 group share</td></tr>
  </table>
- <p><span class="hl">KV-cache sizing:</span> per token, per layer = 2 (K+V) × 8 heads × 128 d × 2 B (FP16) = <span class="hl-g">4,096 B</span>. Full 131K context × 24 layers = <span class="hl-o">~11.5 GB</span> — fits comfortably alongside the ~11.5 GB model in 24 GB VRAM. With standard MHA (64 KV heads) this would swell to <span class="hl-b">~92 GB</span>, making long-context decode physically impossible on consumer hardware. 8:1 GQA is what makes 131K practical.</p>
+ <p><span class="hl">KV-cache sizing:</span> per token, per layer = 2 (K+V) × 8 heads × 64 d × 2 B (FP16) = <span class="hl-g">2,048 B</span>. Full 131K context × 24 layers = <span class="hl-o">~5.9 GB</span> — fits comfortably alongside the ~11.5 GB model in 24 GB VRAM. With standard MHA (64 KV heads) this would swell to <span class="hl-b">~48 GB</span>, making long-context decode physically impossible on consumer hardware. 8:1 GQA is what makes 131K practical.</p>
  <p>In the 3D view: W_Q is the <span style="color:#4d4dff;font-weight:600">wide blue block</span>
- (2880×8192), W_K/V are narrow blocks (2880×1024), and the QKV activation strip is green.</p>
+ (2880×4096), W_K/V are narrow blocks (2880×512), and the QKV activation strip is green.</p>
  <div class="flow-diagram" style="padding:10px 6px 6px">
    <div style="font-size:10px;color:var(--text2);margin-bottom:6px;text-align:center">Sliding Window Attention Mask — 16 tokens shown, window=8 + 2 sinks</div>
    <canvas id="swCanvas" width="420" height="110" style="display:block;margin:0 auto;border-radius:4px"></canvas>
@@ -326,7 +325,7 @@ MoE_output = Σ_{e∈top4} weight_e · Expert_e(x)</div>
   x = x + MoE(RMSNorm(x))     ← top-4 expert dispatch
   return x</div>
  <table class="spec-table"><tr><th>Per-Layer Component</th><th>Params (stored)</th></tr>
- <tr><td>Q + K + V + O projections</td><td>~53M · MXFP4</td></tr>
+ <tr><td>Q + K + V + O projections</td><td>~26.5M · MXFP4</td></tr>
  <tr><td>2× RMSNorm γ weights</td><td>2 × 2,880 = 5,760</td></tr>
  <tr><td>Router (ffn_gate_inp)</td><td>92,160</td></tr>
  <tr><td>32 expert gate+up+down</td><td>~796M · MXFP4</td></tr>
@@ -343,8 +342,7 @@ MoE_output = Σ_{e∈top4} weight_e · Expert_e(x)</div>
  information into Q and K vectors during attention. GPT-OSS uses <span class="hl-o">YaRN scaling</span>
  to extend from the base context of 4,096 to 131,072 tokens.</p>
  <div class="formula-block">RoPE(q, pos):
-  Apply rotation matrix R(pos, θ) to first 64 dims of each head
-  Remaining 64 dims: no rotation (NTK-style partial RoPE)
+  Apply rotation matrix R(pos, θ) to all 64 dims of each head
 
 YaRN parameters:
   θ_base = 150,000  (vs. LLaMA's 10,000)
@@ -352,8 +350,8 @@ YaRN parameters:
   type   = 'yarn'   (frequency interpolation)</div>
  <table class="spec-table"><tr><th>Parameter</th><th>Value</th></tr>
  <tr><td>RoPE θ base</td><td>150,000</td></tr>
- <tr><td>Head dimension</td><td>128 total</td></tr>
- <tr><td>RoPE dims / head</td><td>64 (first half)</td></tr>
+ <tr><td>Head dimension</td><td>64</td></tr>
+ <tr><td>RoPE dims / head</td><td>64 (all dims)</td></tr>
  <tr><td>Original context</td><td>4,096 tokens</td></tr>
  <tr><td>YaRN scale factor</td><td>32× → 131,072 tokens</td></tr>
  <tr><td>Scaling type</td><td>YaRN (frequency interpolation)</td></tr>
@@ -362,12 +360,10 @@ YaRN parameters:
  naturally supporting longer sequences before YaRN scaling is even needed.</p>
  <p><span class="hl">How YaRN extends context:</span> Naive linear scaling (divide all frequencies by 32) severely degrades short-range attention — close tokens look artificially similar. YaRN instead classifies each dimension into three bands: <span class="hl-b">high-frequency dims</span> (small d, animate fast locally) are <em>left unscaled</em>; <span class="hl-o">mid-frequency dims</span> are linearly interpolated; <span class="hl-g">low-frequency dims</span> (large d, capture document-level structure) receive the full 32× scale. This preserves near-neighbor precision while extending far-range context — visible in the bar chart as the smooth wavelength gradient.</p>
  <div class="flow-diagram" style="padding:10px 6px 8px">
-   <div style="font-size:10px;color:var(--text2);margin-bottom:6px;text-align:center">Per-dimension RoPE wavelength — 128-dim head, θ=150,000, YaRN 32×</div>
+   <div style="font-size:10px;color:var(--text2);margin-bottom:6px;text-align:center">Per-dimension RoPE wavelength — 64-dim head, θ=150,000, YaRN 32×</div>
    <canvas id="ropeCanvas" width="420" height="80" style="display:block;margin:0 auto;border-radius:4px"></canvas>
    <div style="font-size:9px;color:var(--text2);margin-top:5px;display:flex;gap:14px;justify-content:center">
-     <span><span style="color:#ff4dff">━━</span> rotated dims (0–63)</span>
-     <span><span style="color:#444">━━</span> unrotated dims (64–127)</span>
-     <span><span style="color:#f0883e">│</span> NTK boundary</span>
+     <span><span style="color:#ff4dff">━━</span> rotated dims (all 64)</span>
    </div>
  </div>`},
 
@@ -649,7 +645,7 @@ function drawRopeCanvas() {
   const cv = document.getElementById('ropeCanvas');
   if (!cv) return;
   const ctx = cv.getContext('2d');
-  const HEAD_DIM = 128, ROPE_DIMS = 64, THETA = 150000, YARN_SCALE = 32;
+  const HEAD_DIM = 64, ROPE_DIMS = 64, THETA = 150000, YARN_SCALE = 32;
   const W = cv.width, H = cv.height;
   ctx.clearRect(0, 0, W, H);
   const barW = Math.floor(W / HEAD_DIM);
@@ -657,36 +653,20 @@ function drawRopeCanvas() {
   const t = (performance.now() - ANIM_T0) / 1000;
   for (let d = 0; d < HEAD_DIM; d++) {
     const x = d * barW;
-    if (d < ROPE_DIMS) {
-      // Wavelength = 2π / (θ^(-2d/D)) = 2π * θ^(2d/D)
-      const freq = Math.pow(THETA, -2 * d / HEAD_DIM);
-      const wavelength = (2 * Math.PI) / freq;
-      // Scale wavelength logarithmically to bar height
-      const logWL = Math.log10(Math.max(1, wavelength));
-      const maxLogWL = Math.log10(2 * Math.PI * Math.pow(THETA, (HEAD_DIM-2)/HEAD_DIM) * YARN_SCALE);
-      const h = Math.max(4, Math.round((logWL / maxLogWL) * (H - 14)));
-      // Animate a phase ripple
-      const phase = Math.sin(t * 1.2 + d * 0.18) * 0.15;
-      const hue = 280 + d * 1.2; // purple to blue
-      const alpha = 0.7 + phase;
-      ctx.fillStyle = `hsla(${hue},80%,65%,${alpha.toFixed(2)})`;
-      ctx.fillRect(x + 1, H - h - 2, barW - 1, h);
-    } else {
-      // Unrotated dims — grey flat bar
-      ctx.fillStyle = 'rgba(60,70,80,0.5)';
-      ctx.fillRect(x + 1, H - 10, barW - 1, 8);
-    }
+    // Wavelength = 2π / (θ^(-2d/D)) = 2π * θ^(2d/D)
+    const freq = Math.pow(THETA, -2 * d / HEAD_DIM);
+    const wavelength = (2 * Math.PI) / freq;
+    // Scale wavelength logarithmically to bar height
+    const logWL = Math.log10(Math.max(1, wavelength));
+    const maxLogWL = Math.log10(2 * Math.PI * Math.pow(THETA, (HEAD_DIM-2)/HEAD_DIM) * YARN_SCALE);
+    const h = Math.max(4, Math.round((logWL / maxLogWL) * (H - 14)));
+    // Animate a phase ripple
+    const phase = Math.sin(t * 1.2 + d * 0.18) * 0.15;
+    const hue = 280 + d * 1.2; // purple to blue
+    const alpha = 0.7 + phase;
+    ctx.fillStyle = `hsla(${hue},80%,65%,${alpha.toFixed(2)})`;
+    ctx.fillRect(x + 1, H - h - 2, barW - 1, h);
   }
-  // NTK boundary marker at dim 64
-  ctx.strokeStyle = '#f0883e';
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([3, 3]);
-  const bx = ROPE_DIMS * barW + 0.5;
-  ctx.beginPath(); ctx.moveTo(bx, 0); ctx.lineTo(bx, H); ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.fillStyle = 'rgba(240,136,62,0.55)';
-  ctx.font = '8px monospace';
-  ctx.fillText('dim 64', bx + 2, 10);
 }
 
 let _ropeAnim = null;
@@ -986,7 +966,7 @@ function mkArrow(from, to, color, opacity) {
 // Architecture (from GGUF metadata):
 //   block_count=24, embedding_length=2880, feed_forward_length=2880
 //   attention.head_count=64, attention.head_count_kv=8
-//   attention.key_length=64 (RoPE dims), actual head_dim=128
+//   attention.key_length=64 (head_dim per head, all dims rotated)
 //   expert_count=32, expert_used_count=4
 //   expert_feed_forward_length=2880
 //   attention.sliding_window=128
@@ -1015,9 +995,9 @@ function getQuantInfo(name) {
 const C    = 2880;  // hidden dim
 const nQ   = 64;    // Q heads
 const nKV  = 8;     // KV heads
-const HD   = 128;   // head dim (actual, derived from tensor shapes)
-const DQ   = nQ * HD;   // 8192 — Q projection output dim
-const DKV  = nKV * HD;  // 1024 — KV projection output dim
+const HD   = 64;    // head dim (attention.key_length = attention.value_length = 64)
+const DQ   = nQ * HD;   // 4096 — Q projection output dim
+const DKV  = nKV * HD;  // 512 — KV projection output dim
 const NE   = 32;    // total experts
 const AE   = 4;     // active experts (top-k)
 const EFF  = 2880;  // expert FFN intermediate dim
@@ -1112,7 +1092,7 @@ for (let i = 0; i < 24; i++) {
       y: y - dDQ * CELL * 0.5, z: 0,
       type: 'w',
       name: i === 0 ? 'W_Q' : '',
-      dimLabel: `W_Q (2,880 × 8,192)\n64 heads × 128-d · MXFP4`,
+      dimLabel: `W_Q (2,880 × 4,096)\n64 heads × 64-d · MXFP4`,
       sectionId: 'attention'
     });
 
@@ -1123,7 +1103,7 @@ for (let i = 0; i < 24; i++) {
       y: y - dDKV * CELL * 0.5, z: 0,
       type: 'w',
       name: i === 0 ? 'W_K' : '',
-      dimLabel: `W_K (2,880 × 1,024)\n8 KV heads × 128-d · MXFP4`,
+      dimLabel: `W_K (2,880 × 512)\n8 KV heads × 64-d · MXFP4`,
       sectionId: 'attention', opacity: 0.75
     });
 
@@ -1134,7 +1114,7 @@ for (let i = 0; i < 24; i++) {
       y: y - dDKV * CELL * 0.5, z: dDKV * CELL + margin,
       type: 'w',
       name: i === 0 ? 'W_V' : '',
-      dimLabel: `W_V (2,880 × 1,024)\n8 KV heads × 128-d · MXFP4`,
+      dimLabel: `W_V (2,880 × 512)\n8 KV heads × 64-d · MXFP4`,
       sectionId: 'attention', opacity: 0.75
     });
 
@@ -1144,7 +1124,7 @@ for (let i = 0; i < 24; i++) {
       x: wX - dC * CELL * 0.5 - margin * 4 - dDQ * CELL - dC * CELL,
       y: y - dsc(128) * CELL * 0.5, z: 0,
       type: 'w', name: i === 0 ? 'Sinks' : '',
-      dimLabel: `attn_sinks: 8 × 128\n1 sink per KV head`,
+      dimLabel: `attn_sinks: [64]\n1 sink embedding`,  
       sectionId: 'attention', small: false, opacity: 0.6
     });
 
@@ -1154,7 +1134,7 @@ for (let i = 0; i < 24; i++) {
       x: lnX - dT * CELL * 0.5 - margin * 2 - dT * CELL,
       y: y - dsc(DQ + DKV * 2) * CELL * 0.5, z: 0,
       type: 'i', name: i === 0 ? 'Q,K,V' : '',
-      dimLabel: `Q(${T}×8192) + K,V(${T}×1024)`,
+      dimLabel: `Q(${T}×4096) + K,V(${T}×512)`,
       sectionId: 'attention', opacity: 0.72
     });
 
@@ -1166,7 +1146,7 @@ for (let i = 0; i < 24; i++) {
       x: wX - dDQ * CELL * 0.5 - margin,
       y: y - dC * CELL * 0.5, z: 0,
       type: 'w', name: i === 0 ? 'W_O' : '',
-      dimLabel: `W_O (8,192 × 2,880) · MXFP4`,
+      dimLabel: `W_O (4,096 × 2,880) · MXFP4`,
       sectionId: 'attention', opacity: 0.82
     });
 
