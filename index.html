@@ -1012,7 +1012,7 @@ const margin = 3;
 // Display cell counts
 const dC    = dsc(C);                       // 45
 const dT    = Math.max(4, dsc(T));          // 4
-const dDQ   = Math.min(80, dsc(DQ));        // min(80, 128) = 80
+const dDQ   = Math.min(80, dsc(DQ));        // min(80, 64) = 64
 const dDKV  = Math.max(6, dsc(DKV));        // 16
 const dEFF  = dsc(EFF);                     // 45
 const dVocab = Math.min(140, dsc(VOCAB));   // 140 (capped)
@@ -1023,7 +1023,7 @@ const lnX   = leftX - dT * CELL - margin;
 const wX    = lnX - dC * CELL * 0.5 - margin * 2;   // weight column center
 
 // Z spread for MoE experts: 32 slabs
-const NE_STEP = 1.4; // world units between expert slab centers (Z axis)
+const NE_STEP = 1.8; // world units between expert slab centers (Z axis) — cz=3 slabs fill 50% of gap
 const expertBaseX = wX - dDQ * CELL * 0.5 - margin;  // behind Q weights
 
 let y = 260; // start Y position (decrements as we go down the model)
@@ -1103,36 +1103,37 @@ for (let i = 0; i < 24; i++) {
       sectionId: 'attention'
     });
 
-    // K weight — narrow (2880×1024)
+    // K weight — same X column as Q, offset in Z (layered parallel projections)
     const kW = mkBlock({
       cx: dC, cy: dDKV, cz: 1,
-      x: wX - dC * CELL * 0.5 - margin * 3 - dDQ * CELL,
-      y: y - dDKV * CELL * 0.5, z: 0,
+      x: wX - dC * CELL * 0.5 - margin,
+      y: y - dDKV * CELL * 0.5, z: -(dC * CELL + margin),
       type: 'w',
       name: i === 0 ? 'W_K' : '',
       dimLabel: `W_K (2,880 × 512)\n8 KV heads × 64-d · MXFP4`,
-      sectionId: 'attention', opacity: 0.75
+      sectionId: 'attention', opacity: 0.78
     });
 
-    // V weight — same as K
+    // V weight — same column, one step further back in Z
     mkBlock({
       cx: dC, cy: dDKV, cz: 1,
-      x: wX - dC * CELL * 0.5 - margin * 3 - dDQ * CELL,
-      y: y - dDKV * CELL * 0.5, z: dDKV * CELL + margin,
+      x: wX - dC * CELL * 0.5 - margin,
+      y: y - dDKV * CELL * 0.5, z: -2 * (dC * CELL + margin),
       type: 'w',
       name: i === 0 ? 'W_V' : '',
       dimLabel: `W_V (2,880 × 512)\n8 KV heads × 64-d · MXFP4`,
-      sectionId: 'attention', opacity: 0.75
+      sectionId: 'attention', opacity: 0.72
     });
 
-    // Attention sinks (small)
+    // Attention sinks — [64] 1D tensor, shown as small indicator cube
     mkBlock({
-      cx: dsc(8), cy: dsc(128), cz: 1,
-      x: wX - dC * CELL * 0.5 - margin * 4 - dDQ * CELL - dC * CELL,
-      y: y - dsc(128) * CELL * 0.5, z: 0,
+      cx: 4, cy: 4, cz: 4,
+      x: wX - dC * CELL * 0.5 - margin,
+      y: y + 2,
+      z: -(dC * CELL + margin),
       type: 'w', name: i === 0 ? 'Sinks' : '',
-      dimLabel: `attn_sinks: [64]\n1 sink embedding`,  
-      sectionId: 'attention', small: false, opacity: 0.6
+      dimLabel: `attn_sinks: [64]\n1D sink-token embedding`,
+      sectionId: 'attention', small: false, opacity: 0.65
     });
 
     // QKV combined activation
@@ -1203,15 +1204,15 @@ for (let i = 0; i < 24; i++) {
       const ez = (e - (NE - 1) * 0.5) * NE_STEP;
       const isActive = e < AE; // top-4 shown as active
       mkBlock({
-        cx: dC, cy: dEFF, cz: 1,
+        cx: dC, cy: dEFF, cz: 3,
         x: expertX, y: expertY, z: ez,
-        type: isActive ? 'i' : 'w',
-        name: e === 0 ? 'Expert 0 ✓' : e === AE - 1 ? `Expert ${AE-1} ✓` : e === AE ? `Expert ${AE}…${NE-1}` : '',
+        type: 'w',  // all experts are MXFP4 weight tensors
+        name: e === 0 ? 'Expert 0 ✓' : e === AE - 1 ? `Expert ${AE-1} ✓` : e === AE ? `Expert ${AE}…` : '',
         dimLabel: isActive
-          ? `Expert ${e} (ACTIVE)\ngate+up+down: 2880→2880→2880 SwiGLU`
-          : `Expert ${e} (inactive this token)\ngate+up+down: 2880→2880→2880`,
+          ? `Expert ${e} (selected)\ngate+up+down: 2880→2880→2880 SwiGLU`
+          : `Expert ${e} (not selected)\ngate+up+down: 2880→2880→2880`,
         sectionId: isActive ? 'experts' : 'router',
-        opacity: isActive ? 0.88 : 0.22,
+        opacity: isActive ? 0.88 : 0.07,
         small: e > 0 && e < AE - 1
       });
       // Arrow from router to active experts
@@ -1235,7 +1236,7 @@ for (let i = 0; i < 24; i++) {
       new THREE.Vector3(expertX, expertY, (AE - 1 - (NE - 1) * 0.5) * NE_STEP * 0.5),
       moeOut.position.clone(), 0x4dcc4d, 0.55
     );
-    mkArrow(routerMesh.position.clone(), moeOut.position.clone(), 0xff6b35, 0.18);
+    mkFlowArrow(routerMesh.position.clone(), moeOut.position.clone(), 0xff6b35, 0.32);
     residualPath.push(moeOut.position.clone());
 
     y -= dEFF * CELL + margin * 3;
@@ -1371,9 +1372,16 @@ let arcTargetSet = new Set();
 function mkFlowArrow(from, to, colHex, opac) {
   opac = opac ?? 0.60;
   const col3 = new THREE.Color(colHex ?? 0x56d364);
-  // Bezier path with a gentle arc
+  // Bezier path — bow sideways for vertical connections, upward for horizontal
   const mid = new THREE.Vector3().lerpVectors(from, to, 0.5);
-  mid.y += Math.abs(from.y - to.y) * 0.20 + 1.5;
+  const vDist = Math.abs(to.y - from.y);
+  const hDist = Math.sqrt((to.x - from.x) ** 2 + (to.z - from.z) ** 2);
+  if (vDist > hDist * 1.2) {
+    // Primarily vertical — bow out in +X to avoid upside-down ∩ arc
+    mid.x += 3.5 + vDist * 0.03;
+  } else {
+    mid.y += vDist * 0.18 + 1.5;
+  }
   const curve = new THREE.QuadraticBezierCurve3(from.clone(), mid, to.clone());
   // Animated dashed tube
   const tubeMat = new THREE.ShaderMaterial({
