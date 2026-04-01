@@ -960,6 +960,10 @@ function mkArrow(from, to, color, opacity) {
   const m = new THREE.Mesh(tg, tm); scene.add(m); return m;
 }
 
+// ─── FLOW ARROW groups (declared here; function defined later but hoists) ───
+const flowGroup = new THREE.Group(); scene.add(flowGroup);
+const flowArrowMats = [];
+
 // ═══════════════════════════════════════════════════════════════
 // GPT-OSS 20B MODEL LAYOUT
 // ═══════════════════════════════════════════════════════════════
@@ -1048,11 +1052,14 @@ const resEmbed = mkBlock({
   type: 'i', name: 'Input Embed', dimLabel: `(${T}, 2,880) residual`,
   sectionId: 'embed'
 });
-mkArrow(
+mkFlowArrow(
   new THREE.Vector3(embW.position.x + dVocab * CELL * 0.5, embW.position.y, 0),
-  resEmbed.position.clone(), 0x4dcc4d, 0.25
+  resEmbed.position.clone(), 0x4dcc4d, 0.55
 );
 y -= dC * CELL + margin * 2;
+
+// residual spine: collect positions to link into main flow
+const residualPath = [resEmbed.position.clone()];
 
 // ── SECTION: 24 TRANSFORMER LAYERS ──────────────────────────
 const DETAIL_LAYERS = new Set([0, 11, 23]);
@@ -1163,7 +1170,8 @@ for (let i = 0; i < 24; i++) {
       type: 'i', name: `L${i} attn+res`,
       dimLabel: `(${T}, 2880) x + Attn(x)`, sectionId: 'layers'
     });
-    mkArrow(attnOut.position.clone(), attnRes.position.clone(), 0x4dcc4d, 0.2);
+    mkFlowArrow(attnOut.position.clone(), attnRes.position.clone(), 0x4dcc4d, 0.6);
+    residualPath.push(attnRes.position.clone());
     y -= dC * CELL + margin;
 
     // ── Pre-MLP RMSNorm ──
@@ -1208,10 +1216,10 @@ for (let i = 0; i < 24; i++) {
       });
       // Arrow from router to active experts
       if (isActive) {
-        mkArrow(
+        mkFlowArrow(
           new THREE.Vector3(routerX + dsc(NE) * CELL * 0.5, routerY, 0),
           new THREE.Vector3(expertX - dC * CELL * 0.5, expertY, ez),
-          0xff8844, 0.35
+          0xff8844, 0.45
         );
       }
     }
@@ -1223,11 +1231,12 @@ for (let i = 0; i < 24; i++) {
       dimLabel: `(${T}, 2880)\nΣ weight_e · Expert_e(x)  (4 experts)`,
       sectionId: 'experts'
     });
-    mkArrow(
+    mkFlowArrow(
       new THREE.Vector3(expertX, expertY, (AE - 1 - (NE - 1) * 0.5) * NE_STEP * 0.5),
-      moeOut.position.clone(), 0x4dcc4d, 0.22
+      moeOut.position.clone(), 0x4dcc4d, 0.55
     );
-    mkArrow(routerMesh.position.clone(), moeOut.position.clone(), 0xff6b35, 0.15);
+    mkArrow(routerMesh.position.clone(), moeOut.position.clone(), 0xff6b35, 0.18);
+    residualPath.push(moeOut.position.clone());
 
     y -= dEFF * CELL + margin * 3;
 
@@ -1286,10 +1295,17 @@ const logits = mkBlock({
   dimLabel: `(${T}, 201,088)\nnext-token probabilities`,
   sectionId: 'output', opacity: 0.75
 });
-mkArrow(
+// connect residual spine through final blocks then to logits
+residualPath.push(normFinal.position.clone());
+mkFlowArrow(
   new THREE.Vector3(outW.position.x + dVocab * CELL * 0.5, outW.position.y, 0),
-  logits.position.clone(), 0x56d364, 0.25
+  logits.position.clone(), 0x56d364, 0.60
 );
+residualPath.push(logits.position.clone());
+// Draw main residual spine
+for (let _ri = 0; _ri < residualPath.length - 1; _ri++) {
+  mkFlowArrow(residualPath[_ri], residualPath[_ri + 1], 0x44aaff, 0.42);
+}
 y -= Math.min(40, dsc(VOCAB)) * CELL + margin * 4;
 
 // ── DATA FLOW PARTICLES ─────────────────────────────────────
@@ -1351,6 +1367,57 @@ function getConnectedBlocks(blockIdx) {
 
 const arcGroup = new THREE.Group(); scene.add(arcGroup);
 let arcTargetSet = new Set();
+
+function mkFlowArrow(from, to, colHex, opac) {
+  opac = opac ?? 0.60;
+  const col3 = new THREE.Color(colHex ?? 0x56d364);
+  // Bezier path with a gentle arc
+  const mid = new THREE.Vector3().lerpVectors(from, to, 0.5);
+  mid.y += Math.abs(from.y - to.y) * 0.20 + 1.5;
+  const curve = new THREE.QuadraticBezierCurve3(from.clone(), mid, to.clone());
+  // Animated dashed tube
+  const tubeMat = new THREE.ShaderMaterial({
+    uniforms: {
+      u_col:  { value: col3.clone() },
+      u_op:   { value: opac },
+      u_time: { value: 0.0 }
+    },
+    vertexShader: `varying vec2 vUv;
+      void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }`,
+    fragmentShader: `uniform vec3 u_col; uniform float u_op; uniform float u_time;
+      varying vec2 vUv;
+      void main(){
+        float dash = fract(vUv.x * 7.0 - u_time * 1.5);
+        float a = smoothstep(0.0,0.07,dash) * (1.0-smoothstep(0.42,0.55,dash));
+        float bright = 0.65 + 0.35*a;
+        float edge = smoothstep(0.0,0.15,vUv.y)*smoothstep(1.0,0.85,vUv.y);
+        gl_FragColor = vec4(u_col * bright, a * u_op * edge);
+      }`,
+    transparent: true, depthWrite: false
+  });
+  flowArrowMats.push(tubeMat);
+  const tubeGeo = new THREE.TubeGeometry(curve, 28, 0.13, 6, false);
+  flowGroup.add(new THREE.Mesh(tubeGeo, tubeMat));
+  // Cone arrowhead pointing along tangent at destination
+  const tangent = curve.getTangent(1.0).normalize();
+  const coneGeo = new THREE.ConeGeometry(0.26, 0.60, 8);
+  const coneMat = new THREE.MeshBasicMaterial({ color: col3, transparent: true, opacity: Math.min(1, opac * 1.25) });
+  const cone = new THREE.Mesh(coneGeo, coneMat);
+  cone.position.copy(to);
+  cone.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), tangent);
+  flowGroup.add(cone);
+  // Animated dot that travels the path
+  const dotMat = new THREE.MeshBasicMaterial({
+    color: col3.clone().lerp(new THREE.Color(1,1,1), 0.55),
+    transparent: true, opacity: 0.9
+  });
+  const dot = new THREE.Mesh(new THREE.SphereGeometry(0.19, 8, 8), dotMat);
+  dot.userData._curve = curve;
+  dot.userData._speed = 0.48 + Math.random() * 0.28;
+  dot.userData._phase = Math.random();
+  dot.userData._dotColor = col3.clone().lerp(new THREE.Color(1,1,1), 0.55);
+  flowGroup.add(dot);
+}
 
 const hitDiscGeo = new THREE.CircleGeometry(0.35, 16);
 const hitDiscMat = new THREE.MeshBasicMaterial({ color: 0xffff44, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
@@ -1756,6 +1823,16 @@ function animate() {
   controls.update();
   const cp = camera.position;
   allBlocks.forEach(b => { b.material.uniforms.u_camPos.value.copy(cp); });
+  // Animate flow arrow dashes
+  flowArrowMats.forEach(m => { m.uniforms.u_time.value = t; });
+  // Animate flow dots
+  flowGroup.children.forEach(child => {
+    if (child.userData._curve) {
+      const p = ((t * child.userData._speed + (child.userData._phase || 0)) % 1 + 1) % 1;
+      child.position.copy(child.userData._curve.getPoint(p));
+      child.material.opacity = 0.65 + Math.sin(t * 7 + child.userData._phase * 5) * 0.30;
+    }
+  });
   // Particle flow
   const pos = particles.geometry.attributes.position.array;
   for (let i = 0; i < pCount; i++) {
