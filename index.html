@@ -70,10 +70,17 @@ header .right { margin-left: auto; font-size: 11px; color: var(--text2); }
 #sig-banner .sig-name { color: var(--accent); font-weight: 700; font-size: 11px; }
 #sig-banner .sig-note { color: var(--text2); margin-top: 4px; font-size: 9px; line-height: 1.5; }
 #sig-banner .sig-warn { color: #bc8855; font-size: 9px; margin-top: 5px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 5px; line-height: 1.5; }
-#tooltip3d { position: fixed; z-index: 200; pointer-events: none; background: rgba(9,12,16,0.95); border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; padding: 8px 12px; max-width: 280px; font-size: 11px; line-height: 1.5; color: var(--text); box-shadow: 0 6px 24px rgba(0,0,0,0.5); backdrop-filter: blur(8px); opacity: 0; transition: opacity 0.12s; }
+#tooltip3d { position: fixed; z-index: 200; pointer-events: none; background: rgba(7,9,14,0.97); border: 1px solid rgba(88,166,255,0.18); border-radius: 8px; padding: 10px 14px; max-width: 340px; font-size: 11px; line-height: 1.5; color: var(--text); box-shadow: 0 8px 32px rgba(0,0,0,0.65); backdrop-filter: blur(10px); opacity: 0; transition: opacity 0.1s; }
 #tooltip3d.show { opacity: 1; }
-#tooltip3d .tt-title { font-weight: 700; color: var(--cyan); margin-bottom: 3px; }
-#tooltip3d .tt-dim { color: var(--gold); font-family: monospace; font-size: 10px; }
+#tooltip3d .tt-title { font-weight: 700; color: var(--cyan); font-size: 12px; margin-bottom: 5px; display:flex; align-items:center; gap:6px; }
+#tooltip3d .tt-formula { font-family: 'Cascadia Code','Consolas',monospace; font-size: 10.5px; color: #c9b0ff; background: rgba(130,80,230,0.10); border: 1px solid rgba(130,80,230,0.22); border-radius: 4px; padding: 4px 9px; margin: 0 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#tooltip3d .tt-shapes { display:flex; flex-wrap:wrap; gap:3px; align-items:center; margin: 0 0 6px; }
+.tt-shape-pill { display:inline-flex; flex-direction:column; align-items:center; padding:2px 6px; border-radius:4px; border:1px solid; font-size:8px; font-family:'Cascadia Code','Consolas',monospace; line-height:1.35; }
+.tt-shape-pill b { font-size:9px; }
+.tt-arrow { color: rgba(139,148,158,0.55); font-size:10px; margin:0 1px; }
+#tooltip3d .tt-note { font-size:9px; color: rgba(139,148,158,0.82); line-height:1.45; border-top: 1px solid rgba(255,255,255,0.06); padding-top:5px; margin-top:2px; }
+#tooltip3d .tt-dim { color: var(--gold); font-family: monospace; font-size: 10px; margin-bottom:3px; }
+#tooltip3d .tt-cell { font-size:8.5px; color:rgba(88,166,255,0.4); margin-top:4px; font-family:monospace; }
 .blk-label { color: rgba(255,255,255,0.7); font-size: 9px; font-family: 'Segoe UI', sans-serif; white-space: nowrap; pointer-events: none; text-shadow: 0 1px 4px rgba(0,0,0,0.9); letter-spacing: 0.3px; }
 @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
 #rawCursor { animation: blink 0.9s step-end infinite; }
@@ -418,6 +425,10 @@ next_token = argmax(softmax(logits[-1]))</div>
      <div id="layerSweepBar" style="height:100%;background:linear-gradient(90deg,#4d4dff,#f778ba);border-radius:3px;width:0;transition:width 0.07s linear"></div>
    </div>
    <span id="layerSweepLabel" style="width:28px;text-align:right;font-family:monospace;color:#f778ba">—</span>
+ </div>
+ <div id="tokenizationPanel" style="display:none;margin:0 0 7px">
+   <div style="font-size:8.5px;text-transform:uppercase;letter-spacing:0.07em;color:var(--text2);margin-bottom:4px">Tokenization  \u2192  embedding lookup</div>
+   <div id="tokenChipPanel" style="display:flex;flex-wrap:wrap;gap:5px"></div>
  </div>
  <div id="tokenStream" style="background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.07);border-radius:6px;padding:8px 10px;min-height:38px;max-height:96px;overflow-y:auto;font-family:monospace;font-size:12px;line-height:1.6;color:var(--text);margin-bottom:8px;word-break:break-all"></div>
  <canvas id="routerCanvas" width="420" height="88" style="display:block;border-radius:5px;border:1px solid rgba(255,255,255,0.07)"></canvas>
@@ -1379,24 +1390,8 @@ const PROMPT_TOKENS = [
   { text: '\u00a0story',   id: 1198  },
   { text: ':',        id: 25    }
 ];
+// Token chips shown in HTML side panel only (no CSS2DObjects — too small in 3D)
 const tokenChips = [];
-PROMPT_TOKENS.forEach((pt, i) => {
-  const wrap = document.createElement('div');
-  wrap.style.cssText = 'opacity:0;display:flex;flex-direction:column;align-items:center;transition:opacity 0.35s,transform 0.45s';
-  const chipEl = document.createElement('span');
-  chipEl.className = 'token-chip';
-  chipEl.textContent = pt.text;
-  const idEl = document.createElement('span');
-  idEl.style.cssText = 'font-family:monospace;font-size:7px;color:#aad8ff;margin-top:1px;opacity:0;transition:opacity 0.3s';
-  idEl.textContent = '#' + pt.id;
-  wrap.appendChild(chipEl);
-  wrap.appendChild(idEl);
-  const chipObj = new THREE.CSS2DObject(wrap);
-  const chipX = tokIds.position.x + (i - (PROMPT_TOKENS.length - 1) * 0.5) * 2.9;
-  chipObj.position.set(chipX, tokIds.position.y + 6, 0);
-  scene.add(chipObj);
-  tokenChips.push({ obj: chipObj, div: wrap, chipSpan: chipEl, idSpan: idEl });
-});
 
 // ── DATA FLOW PARTICLES ─────────────────────────────────────
 const modelTop = 260, modelBot = y - 10;
@@ -1593,6 +1588,153 @@ function clearHoverCell() {
 // ═══════════════════════════════════════════════════════════════
 // INTERACTION — Raycasting, Tooltips, Reactive Arcs
 // ═══════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════
+// MATH TOOLTIP DATA  (bbycroft-style: formula + shape pills + note)
+// ═══════════════════════════════════════════════════════════════
+const MATH_INFO = {
+  'Token IDs':{
+    op:'ids = tokenize(text)',
+    io:[{l:'text',s:'(T,) bytes',c:'#aad8ff'},{l:'→'},{l:'ids',s:'(T,) int64',c:'#4dcc4d'}],
+    note:'BPE tokenizer maps each subword to an integer ID from a 201,088-token vocabulary'},
+  'Token Embed':{
+    op:'x\u2080 = E[ids, :]',
+    io:[{l:'E',s:'(201088,2880)',c:'#8080ff'},{l:'ids',s:'(T,)',c:'#4dcc4d'},{l:'\u2192'},{l:'x\u2080',s:'(T,2880)',c:'#4dcc4d'}],
+    note:'Row lookup — each ID selects one 2880-d vector; matrix stored Q8_0, dequantised to F32 at runtime'},
+  'Input Embed':{
+    op:'x\u2080 = E[ids]  (+ position via RoPE inside attention)',
+    io:[{l:'ids',s:'(T,)',c:'#4dcc4d'},{l:'\u2192'},{l:'x\u2080',s:'(T,2880) F32',c:'#4dcc4d'}],
+    note:'Residual stream entry point; absolute positions not added here — YaRN RoPE rotations are applied inside every attention head'},
+  'RMSNorm':{
+    op:'x\u0302 = \u03b3 \u2299 ( x / RMS(x) )',
+    io:[{l:'x',s:'(T,2880)',c:'#4dcc4d'},{l:'\u03b3',s:'(2880,) F32',c:'#b34d4d'},{l:'\u2192'},{l:'x\u0302',s:'(T,2880)',c:'#4dcc4d'}],
+    note:'RMSNorm: no mean subtraction; divide by root-mean-square then apply per-dimension learned scale \u03b3. Cheaper than LayerNorm'},
+  '\u03b3':{
+    op:'(per-dimension learned scale)',
+    io:[{l:'\u03b3',s:'(2880,) F32',c:'#b34d4d'}],
+    note:'One scalar per hidden dim; multiplied elementwise after RMS normalisation; initialised to 1, learned during training'},
+  'Normed x':{
+    op:'x\u0302 = \u03b3 \u2299 x / RMS(x)',
+    io:[{l:'x',s:'(T,2880)',c:'#4dcc4d'},{l:'\u2192'},{l:'x\u0302',s:'(T,2880)',c:'#4dcc4d'}],
+    note:'Pre-attention normalised activations fed to W_Q, W_K, W_V projections in parallel'},
+  'W_Q':{
+    op:'Q = x\u0302 \u00b7 W_Q',
+    io:[{l:'x\u0302',s:'(T,2880)',c:'#4dcc4d'},{l:'W_Q',s:'(2880,4096)',c:'#4d4dff'},{l:'\u2192'},{l:'Q',s:'(T,4096)',c:'#4dcc4d'}],
+    note:'4096 = 64 heads \u00d7 64 head_dim; RoPE rotation applied per head; MXFP4 dequantised via __byte_perm + DP4A before matmul'},
+  'W_K':{
+    op:'K = x\u0302 \u00b7 W_K',
+    io:[{l:'x\u0302',s:'(T,2880)',c:'#4dcc4d'},{l:'W_K',s:'(2880,512)',c:'#4d4dff'},{l:'\u2192'},{l:'K',s:'(T,512)',c:'#4dcc4d'}],
+    note:'512 = 8 KV heads \u00d7 64 head_dim; GQA — each of 8 key groups is shared across 8 Q heads, reducing KV cache 8\u00d7'},
+  'W_V':{
+    op:'V = x\u0302 \u00b7 W_V',
+    io:[{l:'x\u0302',s:'(T,2880)',c:'#4dcc4d'},{l:'W_V',s:'(2880,512)',c:'#4d4dff'},{l:'\u2192'},{l:'V',s:'(T,512)',c:'#4dcc4d'}],
+    note:'8 KV heads \u00d7 64-d; values cached in KV cache; retrieved for every position inside the 128-token sliding window'},
+  'Sinks':{
+    op:'attn += softmax(q \u00b7 k_sink\u1d40 / \u221a64) \u00b7 v_sink',
+    io:[{l:'sinks',s:'(64,) F32',c:'#4d4dff'},{l:'\u2192'},{l:'\u0394attn',s:'(T,2880)',c:'#4dcc4d'}],
+    note:'Attention sink tokens absorb probability mass from positions outside the 128-token window, preventing the distribution becoming degenerate at long contexts'},
+  'Q':{
+    op:'Q = RoPE( x\u0302 \u00b7 W_Q )',
+    io:[{l:'x\u0302',s:'(T,2880)',c:'#4dcc4d'},{l:'\u2192'},{l:'Q',s:'(T,64,64)',c:'#4dcc4d'}],
+    note:'Query vectors with YaRN RoPE rotations applied per-head; attend over last 128 tokens + sink tokens'},
+  'K':{
+    op:'K = RoPE( x\u0302 \u00b7 W_K )',
+    io:[{l:'x\u0302',s:'(T,2880)',c:'#4dcc4d'},{l:'\u2192'},{l:'K',s:'(T,8,64)',c:'#4dcc4d'}],
+    note:'8 KV key groups; each serves 8 Q heads; RoPE-rotated; appended to KV cache per decode step'},
+  'V':{
+    op:'V = x\u0302 \u00b7 W_V',
+    io:[{l:'x\u0302',s:'(T,2880)',c:'#4dcc4d'},{l:'\u2192'},{l:'V',s:'(T,8,64)',c:'#4dcc4d'}],
+    note:'8 value groups cached; attn output = \u03a3 softmax(Q\u00b7K\u1d40/\u221a64) \u00b7 V summed over window positions'},
+  'W_O':{
+    op:'a = concat(h\u2081\u2026h\u2086\u2084) \u00b7 W_O',
+    io:[{l:'heads',s:'(T,64,64)',c:'#4dcc4d'},{l:'W_O',s:'(4096,2880)',c:'#4d4dff'},{l:'\u2192'},{l:'a',s:'(T,2880)',c:'#4dcc4d'}],
+    note:'Concatenate 64 head outputs \u2192 (T,4096); project back to residual dim 2880; result is added to residual stream'},
+  'Attn Out':{
+    op:'x = x + a  (residual add)',
+    io:[{l:'x',s:'(T,2880)',c:'#4dcc4d'},{l:'a',s:'(T,2880)',c:'#4dcc4d'},{l:'\u2192'},{l:'x\u2019',s:'(T,2880)',c:'#4dcc4d'}],
+    note:'Residual connection: attention output added back to incoming residual stream; preserves low-frequency signal through depth'},
+  'Pre-MLP LN':{
+    op:'x\u0302\u2082 = \u03b3\u2082 \u2299 x\u2019 / RMS(x\u2019)',
+    io:[{l:'x\u2019',s:'(T,2880)',c:'#4dcc4d'},{l:'\u2192'},{l:'x\u0302\u2082',s:'(T,2880)',c:'#4dcc4d'}],
+    note:'Second per-layer RMSNorm; normalises the post-attention residual before the MoE FFN block'},
+  'Router Gate':{
+    op:'scores = softmax(x\u0302\u2082 \u00b7 W_gate);  top-4 select',
+    io:[{l:'x\u0302\u2082',s:'(T,2880)',c:'#4dcc4d'},{l:'W_gate',s:'(2880,32)',c:'#ff6b35'},{l:'\u2192'},{l:'w',s:'(T,4)',c:'#ff6b35'},{l:'idx',s:'(T,4)',c:'#ff6b35'}],
+    note:'Linear router projects to 32 expert scores; top-4 selected per token; their weights re-normalised; 28 experts receive zero compute this step'},
+  'Expert 0 \u2713':{
+    op:'h = SiLU(x\u0302\u2082\u00b7W_gate) \u2299 (x\u0302\u2082\u00b7W_up);  out = W_down\u00b7h',
+    io:[{l:'x\u0302\u2082',s:'(T,2880)',c:'#4dcc4d'},{l:'W\u00d73',s:'(2880,2880)',c:'#4d4dff'},{l:'\u2192'},{l:'out',s:'(T,2880)',c:'#4dcc4d'}],
+    note:'SwiGLU FFN: gating with SiLU controls information flow. 3 matrices (gate/up/down) \u00d7 2880\u00b2 = ~50M params/expert. Only 4/32 activated per token'},
+  '__moeActive':{
+    op:'h = SiLU(x\u0302\u2082\u00b7W_gate) \u2299 (x\u0302\u2082\u00b7W_up);  out = w\u00b7W_down\u00b7h',
+    io:[{l:'x\u0302\u2082',s:'(T,2880)',c:'#4dcc4d'},{l:'W\u00d73',s:'(2880,2880)',c:'#4d4dff'},{l:'\u2192'},{l:'w\u00b7out',s:'(T,2880)',c:'#4dcc4d'}],
+    note:'Active expert: SwiGLU computed and weighted by router score. MoE output = \u03a3(w_e \u00b7 expert_e(x)) over top-4 selected experts'},
+  '__moeInactive':{
+    op:'(not selected \u2014 zero compute this token)',
+    io:[{l:'scores',s:'(32,) softmax',c:'#ff6b35'},{l:'\u2192'},{l:'skip',s:'w=0',c:'rgba(100,100,100,0.6)'}],
+    note:'Router assigned a weight below top-4 threshold; weights remain in VRAM (MXFP4) but are not dequantised or multiplied this decode step'},
+  '__attnRes':{
+    op:'x\u2019 = x + Attn( RMSNorm(x) )',
+    io:[{l:'x',s:'(T,2880)',c:'#4dcc4d'},{l:'\u2192'},{l:'x\u2019',s:'(T,2880)',c:'#4dcc4d'}],
+    note:'Post-attention residual; x unchanged in magnitude — attention contribution enriches each token position with contextual information from the sliding window'},
+  '__moeRes':{
+    op:'x\u2033 = x\u2019 + MoE( RMSNorm(x\u2019) )',
+    io:[{l:'x\u2019',s:'(T,2880)',c:'#4dcc4d'},{l:'\u2192'},{l:'x\u2033',s:'(T,2880)',c:'#4dcc4d'}],
+    note:'Post-MoE residual; MoE output (weighted sum of top-4 experts) added to residual stream. This value feeds into the next layer pre-attention LN'},
+  'Layers 1\u201310':{
+    op:'(\u00d710 attention + MoE sublayers)',
+    io:[{l:'x',s:'(T,2880)',c:'#4dcc4d'},{l:'\u2192'},{l:'x\u2019',s:'(T,2880)',c:'#4dcc4d'}],
+    note:'Layers 1\u201310 collapsed; each applies identical: pre-attn LN \u2192 GQA \u2192 residual \u2192 pre-MLP LN \u2192 MoE router \u2192 top-4 experts \u2192 residual'},
+  'Layers 12\u201322':{
+    op:'(\u00d711 attention + MoE sublayers)',
+    io:[{l:'x',s:'(T,2880)',c:'#4dcc4d'},{l:'\u2192'},{l:'x\u2019',s:'(T,2880)',c:'#4dcc4d'}],
+    note:'Layers 12\u201322 collapsed for visual clarity; same structure as fully-expanded layers 0, 11, and 23'},
+  'Output Norm':{
+    op:'x\u0302_f = \u03b3_out \u2299 x_L23 / RMS(x_L23)',
+    io:[{l:'x_L23',s:'(T,2880)',c:'#4dcc4d'},{l:'\u2192'},{l:'x\u0302_f',s:'(T,2880)',c:'#4dcc4d'}],
+    note:'Final RMSNorm after the last transformer layer; prepares activations for the LM head projection'},
+  'Normed Final':{
+    op:'x\u0302_f = \u03b3_out \u2299 x_L23 / RMS(x_L23)',
+    io:[{l:'x_L23',s:'(T,2880)',c:'#4dcc4d'},{l:'\u2192'},{l:'x\u0302_f',s:'(T,2880)',c:'#4dcc4d'}],
+    note:'Normalised final hidden states; each row is a 2880-d contextual representation of one token position, ready for projection to vocab'},
+  'Output W (LM Head)':{
+    op:'logits = x\u0302_f \u00b7 E\u1d40  (weight-tied)',
+    io:[{l:'x\u0302_f',s:'(T,2880)',c:'#4dcc4d'},{l:'E\u1d40',s:'(2880,201088)',c:'#8080ff'},{l:'\u2192'},{l:'logits',s:'(T,201088)',c:'#4dcc4d'}],
+    note:'Weight-tied with token_embd.weight (transposed). Cosine similarity between hidden state and each embedding prototype gives the raw logit. Saves ~553 MB'},
+  'Logits':{
+    op:'p = top-p\u2090\u208c\u2080\u2089( softmax(logits / 0.7) )',
+    io:[{l:'logits',s:'(T,201088)',c:'#4dcc4d'},{l:'\u2192'},{l:'next_id',s:'(scalar) sampled',c:'#e3b341'}],
+    note:'Temp 0.7 sharpens distribution; nucleus (p=0.9) keeps only the minimal token set summing to 90% probability; sample drawn from the kept set'}
+};
+function _mkShapePill(item) {
+  if (!item.s) return `<span class="tt-arrow">${item.l}</span>`;
+  const bg = item.c ? item.c.replace(/[^,]+(?=\))/, m => (parseFloat(m)*0.12).toFixed(2)) + '18' : 'rgba(88,88,88,0.12)';
+  const border = item.c || 'rgba(88,88,88,0.3)';
+  return `<span class="tt-shape-pill" style="background:${item.c}18;border-color:${item.c}55;color:${item.c}"><b>${item.l}</b><span>${item.s}</span></span>`;
+}
+function buildTooltipHTML(block, cx, cy) {
+  const lbl = block.userData.label;
+  let mi = MATH_INFO[lbl];
+  if (!mi) {
+    if (lbl && /^L\d+ attn\+res$/.test(lbl))  mi = MATH_INFO['__attnRes'];
+    else if (lbl && /^L\d+ MoE\+res$/.test(lbl)) mi = MATH_INFO['__moeRes'];
+    else if (lbl && /\u2713/.test(lbl)) mi = MATH_INFO['__moeActive'];
+    else if (lbl && /\u2026/.test(lbl)) mi = MATH_INFO['__moeInactive'];
+  }
+  const qi = getQuantInfo(lbl);
+  const qBadge = qi ? `<span style="padding:1px 5px;border-radius:3px;background:${qi.color}22;color:${qi.color};border:1px solid ${qi.color}55;font-size:8px;font-weight:700">${qi.fmt}</span>` : '';
+  let html = '';
+  if (mi) {
+    html += `<div class="tt-formula">${mi.op}</div>`;
+    html += `<div class="tt-shapes">${mi.io.map(_mkShapePill).join('')}</div>`;
+    if (mi.note) html += `<div class="tt-note">${mi.note}</div>`;
+  } else {
+    html += `<div class="tt-dim">${(block.userData.dimLabel||'').replace(/\n/g,'<br>')}</div>`;
+  }
+  if (qBadge) html += `<div style="margin-top:5px">${qBadge}</div>`;
+  html += `<div class="tt-cell">[${cx},${cy}]</div>`;
+  return html;
+}
+
 const raycaster = new THREE.Raycaster();
 const mouse = new THREE.Vector2();
 let hovered = null, hoveredIdx = -1;
@@ -1635,14 +1777,8 @@ renderer.domElement.addEventListener('mousemove', e => {
       lastCellX = cx; lastCellY = cy; lastCellZ = cz;
       spawnArcs(idx, hit.point);
     }
-    tooltip3d.querySelector('.tt-title').textContent = newObj.userData.label || newObj.userData.sectionId;
-    const qi = getQuantInfo(newObj.userData.label);
-    const quantBadge = qi
-      ? `<span style="display:inline-block;padding:1px 6px;border-radius:3px;background:${qi.color}22;color:${qi.color};border:1px solid ${qi.color}55;font-size:9px;font-weight:700;margin-left:4px">${qi.fmt}</span>`
-      : '';
-    tooltip3d.querySelector('.tt-body').innerHTML =
-      `<div class="tt-dim">${(newObj.userData.dimLabel || '').replace(/\n/g, '<br>')}${quantBadge}</div>` +
-      `<div style="margin-top:4px;font-size:9px;color:#666">Cell [${cx}, ${cy}]</div>`;
+    tooltip3d.querySelector('.tt-title').innerHTML = (newObj.userData.label || newObj.userData.sectionId);
+    tooltip3d.querySelector('.tt-body').innerHTML = buildTooltipHTML(newObj, cx, cy);
     tooltip3d.classList.add('show');
     tooltip3d.style.left = (e.clientX + 14) + 'px';
     tooltip3d.style.top  = (e.clientY + 14) + 'px';
@@ -1902,90 +2038,105 @@ function demoPanTo(targetPos, durMs) {
 
 // Hide all token chips and scanner; used on reset + pause clear
 function clearDemoChips() {
-  tokenChips.forEach(c => { c.div.style.opacity = '0'; c.div.style.transform = ''; c.idSpan.style.opacity = '0'; });
   if (embScan && embScan.material) embScan.material.opacity = 0;
+  const tPanel = document.getElementById('tokenizationPanel');
+  const cPanel = document.getElementById('tokenChipPanel');
+  if (tPanel) tPanel.style.display = 'none';
+  if (cPanel) cPanel.innerHTML = '';
 }
 
 // Full encoding phase: tokenization → embedding lookup → residual ready
-// Animates token chips, embW scanner, camera pan; calls onDone() when finished
+// Shows side-panel chips + 3D camera pan + embW scanner; calls onDone() when done
 function runEncodePhase(onDone) {
   clearFpTimers();
   const status = document.getElementById('demoStatus');
   const CHIP_COLS = ['#f778ba', '#56d364', '#f0883e', '#aad8ff', '#e3b341'];
-  const T_STEP = 260;  // ms between successive token chip reveals
+  const T_STEP = 310;  // ms between successive token reveals
 
-  // Pan camera to the tokenize/embed area at the top of the model
-  demoPanTo(new THREE.Vector3(tokIds.position.x, tokIds.position.y, 0), 550);
+  // Show tokenization panel
+  const tPanel = document.getElementById('tokenizationPanel');
+  const cPanel = document.getElementById('tokenChipPanel');
+  if (tPanel) tPanel.style.display = 'block';
+  if (cPanel) cPanel.innerHTML = '';
 
-  let t = 20;
+  // Pan camera to the tokenize/embed area
+  demoPanTo(new THREE.Vector3(tokIds.position.x, tokIds.position.y, 0), 500);
+
+  let t = 30;
   _demoFpTimers.push(setTimeout(() => { if (_demoPlaying && status) status.textContent = 'tokenizing…'; }, t));
 
-  // ─ Phase E1: reveal token chips one by one + color-code rawInputText ─
+  // ─ Phase E1: reveal each token chip in side panel + colour rawInputText ─
   PROMPT_TOKENS.forEach((pt, i) => {
     _demoFpTimers.push(setTimeout(() => {
       if (!_demoPlaying) return;
-      tokenChips[i].div.style.opacity = '1';
-      // Color each identified token segment in the raw-input box
+      // Add chip to side panel
+      if (cPanel) {
+        const wrap = document.createElement('div');
+        wrap.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:2px;opacity:0;transform:translateY(5px);transition:opacity 0.3s,transform 0.3s';
+        const col = CHIP_COLS[i % CHIP_COLS.length];
+        wrap.innerHTML = `<span style="background:${col}22;border:1px solid ${col}66;border-radius:4px;padding:3px 9px;font-family:monospace;font-size:11px;color:${col};font-weight:600;white-space:nowrap">${pt.text.trim()}</span>`
+          + `<span style="font-family:monospace;font-size:8.5px;color:#8b949e">id #${pt.id}</span>`;
+        cPanel.appendChild(wrap);
+        requestAnimationFrame(() => { wrap.style.opacity='1'; wrap.style.transform='none'; });
+      }
+      // Colour just this token's span in the raw input box
       const rawEl = document.getElementById('rawInputText');
       if (rawEl) {
         rawEl.innerHTML = PROMPT_TOKENS.map((p2, j) =>
-          `<span style="color:${j <= i ? CHIP_COLS[j % CHIP_COLS.length] : 'rgba(170,216,255,0.35)'}">${
-            p2.text.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</span>`
+          `<span style="color:${j<=i ? CHIP_COLS[j%CHIP_COLS.length] : 'rgba(170,216,255,0.32)'}">${p2.text.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</span>`
         ).join('');
       }
-      schedFlash(0, tokIds, 0.7, 200);
+      schedFlash(0, tokIds, 0.75, 200);
     }, t + i * T_STEP));
-    // Reveal token ID label slightly after the chip
-    _demoFpTimers.push(setTimeout(() => {
-      if (!_demoPlaying) return;
-      tokenChips[i].idSpan.style.opacity = '1';
-    }, t + i * T_STEP + 175));
   });
 
-  t += PROMPT_TOKENS.length * T_STEP + 380;
+  t += PROMPT_TOKENS.length * T_STEP + 350;
 
   // ─ Phase E2: embedding lookup ─ pan toward embW, scanner sweeps per token ─
   _demoFpTimers.push(setTimeout(() => {
     if (!_demoPlaying) return;
     if (status) status.textContent = 'embedding lookup…';
-    // Pan camera so embW matrix is visible alongside Token IDs block
     demoPanTo(new THREE.Vector3(
-      (tokIds.position.x + embW.position.x) * 0.38,
-      tokIds.position.y - 1, 0
-    ), 500);
-    schedFlash(70, tokIds, 0.95, 320);
+      (tokIds.position.x + embW.position.x) * 0.4,
+      tokIds.position.y - 2, 0
+    ), 480);
+    schedFlash(60, tokIds, 0.95, 300);
   }, t));
-  t += 260;
+  t += 240;
 
-  // For each token: snap scanner to that token's proportional row in embW
-  // (low token IDs = near top of matrix, which is accurate for BPE tokenizers)
+  // For each token: snap scanner stripe to proportional row in embW
   PROMPT_TOKENS.forEach((pt, i) => {
+    const col = CHIP_COLS[i % CHIP_COLS.length];
     _demoFpTimers.push(setTimeout(() => {
       if (!_demoPlaying || !embScan.material) return;
-      const rowFrac = Math.min(0.93, pt.id / VOCAB);
+      const rowFrac = Math.min(0.94, pt.id / VOCAB);
       embScan.position.y = _EMBWTOP - rowFrac * _EMBWH;
-      embScan.material.color.set(CHIP_COLS[i % CHIP_COLS.length]);
-      embScan.material.opacity = 0.80;
-      _demoFpTimers.push(setTimeout(() => { if (embScan.material) embScan.material.opacity = 0; }, 215));
-    }, t + i * 240));
+      embScan.material.color.set(col);
+      embScan.material.opacity = 0.85;
+      // Highlight corresponding chip in panel
+      const chipDivs = cPanel ? cPanel.children : [];
+      if (chipDivs[i]) { chipDivs[i].style.transform='scale(1.1)'; chipDivs[i].style.transition='transform 0.15s'; }
+      _demoFpTimers.push(setTimeout(() => {
+        if (embScan.material) embScan.material.opacity = 0;
+        if (chipDivs[i]) chipDivs[i].style.transform='';
+      }, 220));
+    }, t + i * 260));
   });
 
-  t += PROMPT_TOKENS.length * 240 + 420;
+  t += PROMPT_TOKENS.length * 260 + 400;
 
-  // ─ Phase E3: residual stream filled ─ chips fade, resEmbed lights up ─
+  // ─ Phase E3: residual stream filled ─ embW + resEmbed light up, pan to L0 ─
   _demoFpTimers.push(setTimeout(() => {
     if (!_demoPlaying) return;
     if (status) status.textContent = 'embeddings ready…';
-    tokenChips.forEach(c => { c.div.style.opacity = '0'; });
-    schedFlash(0,   embW,     0.72, 480);
-    schedFlash(130, resEmbed, 0.95, 600);
-    // Pan back toward L0 to set up the viewer for the forward-pass sweep
+    schedFlash(0,   embW,     0.70, 500);
+    schedFlash(140, resEmbed, 0.95, 650);
     const l0ref = (demoLayers[0] && demoLayers[0].attnRes)
       ? demoLayers[0].attnRes.position.clone()
-      : new THREE.Vector3(0, tokIds.position.y - 18, 0);
-    demoPanTo(l0ref, 750);
+      : new THREE.Vector3(0, tokIds.position.y - 20, 0);
+    demoPanTo(l0ref, 720);
   }, t));
-  t += 950;
+  t += 980;
 
   _demoFpTimers.push(setTimeout(() => { if (_demoPlaying) onDone(); }, t));
 }
